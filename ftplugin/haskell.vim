@@ -1,6 +1,13 @@
 " Vim equivalent to haskell-mode
 
+" TODO
+setlocal expandtab tabstop=8 shiftwidth=2
+
 const s:endtoken = -1
+" End of a layout list
+const s:layoutEnd = -2
+" A new item in a layout list
+const s:layoutItem = -3
 const [s:if, s:then, s:where,
 			\ s:lbrace,
 			\ s:operator, s:value]
@@ -22,19 +29,13 @@ let s:search_pat ..= '\|\({\)'
 let s:search_pat ..= '\|\([-:!#$%&*+./<=>?@\\\\^|~`]\+\)'
 let s:search_pat ..= '\)'
 
-function s:NextToken(p) abort
-	" Skip whitespace
-	if search('\S', 'cWz') == 0
-		let a:p.eof = 1
-	endif
+" Skips forward to next non-blank and returns whether one was found.
+function SkipWs() abort
+	return search('\S', 'cWz') != 0
+endfunction
 
-	if a:p.eof || line('.') > a:p.initial_line | return s:endtoken | endif
-	" Only parse first token on indent line
-	if line('.') == a:p.initial_line | let a:p.eof = 1 | endif
-
-	" TODO
-	let current_indent = col('.')
-
+" Lexes the token under the cursor and moves to the character after.
+function s:LexToken(p) abort
 	let match = search(s:search_pat, 'cepWz')
 	if match > 0
 		let [lnum, col] = [line('.'), col('.')]
@@ -67,15 +68,43 @@ function s:NextToken(p) abort
 endfunction
 
 function Parse() abort
-	let ctxs = [] " Stack of layout contexts
-	let parser = #{token: v:null, eof: 0, ctxs: ctxs,
+	let parser = #{token: v:null, eof: 0,
+				\ currentLine: 1, currentCol: 1,
 				\ initial_line: line('.'),
+				\ layoutCtx: 0,
 				\ }
 
 	function parser.next() abort
-		let self.token = self->s:NextToken()
+		" Skip whitespace
+		" Only parse first token on indent line
+		if self.token is s:endtoken || self.eof
+			|| !s:SkipWs()
+			|| line('.') > a:p.initial_line
+			|| line('.') == a:p.initial_line && col('.') > indent(line('.'))
+			let self.token = s:endtoken
+		else
+			let [prevLine, prevCol] = [a:p.currentLine, a:p.currentCol]
+			let [a:p.currentLine, a:p.currentCol] = [line('.'), col('.')]
+
+			let implicitLayoutActive = a:p.layoutCtx > 0
+			if implicitLayoutActive && prevline < a:p.currentLine
+				let layoutIndent = a:p.layoutCtx
+
+				if a:p.currentCol < layoutIndent
+					let self.token = s:layoutEnd
+				elseif a:p.currentCol == layoutIndent
+					let self.token = s:layoutItem
+				else
+					let self.token = self->s:LexToken()
+				endif
+			else
+				let self.token = self->s:LexToken()
+			endif
+		endif
+
 		return self.token
 	endfunction
+
 	function parser.peek() abort
 		return self.token is v:null ? self.next() : self.token
 	endfunction
@@ -85,10 +114,14 @@ function Parse() abort
 	return s:TopLevel(parser)
 endfunction
 
-function s:Layout(p) abort
+function s:Layout(p, item) abort
 	if a:p.peek() is s:lbrace
 	else
-		eval a:p.ctxs->add(#{indent: col('.')})
+		let prevLayoutCtx = a:p.layoutCtx
+		" Store indentation column of the enclosing layout context
+		let a:p.layoutCtx = a:p.currentCol
+
+		let a:p.layoutCtx = prevLayoutCtx
 	endif
 endfunction
 
