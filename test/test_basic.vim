@@ -11,7 +11,7 @@ endfunction
 
 function Test_Basic() abort
 	let text =<< trim END
-	foo = 1
+	foo +
 	END
 	call s:Test(text, [#{lnum: 2, points: [0, 2]}])
 endfunction
@@ -20,7 +20,10 @@ function Test_BasicWhere() abort
 	let text =<< trim END
 	foo = 1
 	  where
+	       x = 1; z = 3
+	       y = 3
+	       z foo
 	END
 	call s:Test(text,
-				\ [#{lnum: 2, points: [0, 2]}])
+				\ [#{lnum: 6, points: [0, 2, 8, 10]}])
 endfunction

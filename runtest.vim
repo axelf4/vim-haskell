@@ -4,6 +4,11 @@ filetype plugin indent on
 let s:test_file = expand('%')
 let s:messages = []
 
+function Log(mes) abort
+	echom a:mes
+	eval s:messages->add(a:mes)
+endfunction
+
 function s:CheckErrors() abort
 	if v:errors->empty() | return | endif
 	eval s:messages->add(s:test_file .. ':1:Error')
