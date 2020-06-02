@@ -1,17 +1,18 @@
-" Vim equivalent to haskell-mode
+" Vim filetype plugin
+" Language: Haskell
+" Maintainer: Axel Forsman <axelsfor@gmail.com>
 
-" TODO
-setlocal expandtab tabstop=8 shiftwidth=2
+setlocal tabstop=8 shiftwidth=2 expandtab
 
 const s:endtoken = -1
 " End of a layout list
 const s:layoutEnd = -2
 " A new item in a layout list
 const s:layoutItem = -3
-const [s:if, s:then, s:where,
+const [s:if, s:then, s:else, s:let, s:in, s:where,
 			\ s:lbrace, s:semicolon,
 			\ s:operator, s:value]
-			\ = range(1, 7)
+			\ = range(1, 10)
 const s:syn2Token = {
 			\ "VarId": s:value,
 			\ "hsNumber": s:value,
@@ -22,16 +23,18 @@ const s:ind = 2
 
 let s:search_pat = '\%#\%('
 " Keywords
-let s:search_pat ..= '\%(\(if\)\|\(then\)\|\(where\)\)[[:alnum:]''_]\@!'
+let s:search_pat ..= '\%(\(if\)\|\(then\)\|\(else\)\|\(let\)\|\(in\)\|\(where\)\)[[:alnum:]''_]\@!'
 " Braces and semicolons
 let s:search_pat ..= '\|\({\)\|\(;\)'
+" Special symbols
+" let s:search_pat ..= '\|\%(\(=\)\)[-:!#$%&*+./<=>?@\\\\^|~]\@!'
 " Operators
 let s:search_pat ..= '\|\([-:!#$%&*+./<=>?@\\\\^|~`]\+\)'
 let s:search_pat ..= '\)'
 
 " Skips forward to next non-blank and returns whether one was found.
-function s:SkipWs() abort
-	return search('\S', 'cWz') != 0
+function s:SkipWs(stopline) abort
+	return search('\S', 'cWz', a:stopline) != 0
 endfunction
 
 " Returns true if hit EOF.
@@ -72,25 +75,24 @@ function Parse() abort
 				\ initial_line: line('.'),
 				\ layoutCtx: 0,
 				\ indentations: [0],
+				\ following: s:endtoken,
 				\ }
 
 	function parser.next() abort
 		" Skip whitespace
-		" Only parse first token on indent line
 		if self.token is s:endtoken || self.eof
-					\ || !s:SkipWs()
-					\ || line('.') > self.initial_line
-					\ || line('.') == self.initial_line && col('.') > indent(line('.'))
+					\ || !s:SkipWs(self.initial_line)
 			let self.token = s:endtoken
+		elseif line('.') >= self.initial_line
+			let self.token = s:endtoken
+			if line('.') == self.initial_line | let self.following = self->s:LexToken() | endif
 		else
 			let [prevLine, prevCol] = [self.currentLine, self.currentCol]
 			let [self.currentLine, self.currentCol] = [line('.'), col('.')]
 
 			let implicitLayoutActive = self.layoutCtx > 0
-			if implicitLayoutActive && prevLine < self.currentLine
+			if prevLine < self.currentLine && implicitLayoutActive
 				let layoutIndent = self.layoutCtx
-				call Log('layoutindent: ' .. layoutIndent .. ' currentCol: ' .. self.currentCol)
-				call Log(getline(line('.')))
 
 				if self.currentCol < layoutIndent
 					let self.token = s:layoutEnd
@@ -105,6 +107,7 @@ function Parse() abort
 		endif
 
 		call Log('parserd: ' .. self.token)
+		echom 'parsed:' self.token
 		return self.token
 	endfunction
 
@@ -125,6 +128,7 @@ function Parse() abort
 endfunction
 
 " s:retNone is same as s:retError except not even the first token matched.
+" TODO Remove s:retError and just skip forward instead
 const [s:retOk, s:retNone, s:retError, s:retFinished] = [1, 2, 3, 4]
 
 function s:Token(token) abort
@@ -154,6 +158,16 @@ function s:Or(...) abort
 	return funcref('s:OrRet')
 endfunction
 
+function s:FromDict(dict) abort
+	function! s:FromDictRet(p) abort closure
+		if a:p.peek() == s:endtoken | return #{status: s:retFinished} | endif
+		let Parser = a:dict->get(a:p.peek(), v:null)
+		if Parser is v:null | return #{status: s:retNone} | endif
+		return Parser(a:p)
+	endfunction
+	return funcref('s:FromDictRet')
+endfunction
+
 function s:Seq(...) abort
 	let alts = a:000
 	function! s:SeqRet(p) abort closure
@@ -171,13 +185,17 @@ endfunction
 
 function s:Many(Parser) abort
 	function! s:ManyRet(p) closure
+		let first = 1
 		while 1
 			let result = a:Parser(a:p)
 			let status = result.status
-			if status == s:retNone | return #{status: s:retOk} | endif
+			if status == s:retNone
+				return #{status: first ? s:retNone : s:retOk}
+			endif
 			if status == s:retFinished || status == s:retError
 				return result
 			endif
+			let first = 0
 		endwhile
 	endfunction
 	return funcref('s:ManyRet')
@@ -206,7 +224,7 @@ function s:Layout(Item) abort
 			let prevLayoutCtx = a:p.layoutCtx
 			" Store indentation column of the enclosing layout context
 			let a:p.layoutCtx = a:p.currentCol
-			eval a:p.indentations->add(a:p.layoutCtx)
+			eval a:p.indentations->add(a:p.layoutCtx - 1)
 
 			while 1
 				let result = a:Item(a:p)
@@ -220,10 +238,8 @@ function s:Layout(Item) abort
 				let following = a:p.peek()
 				call a:p.next()
 				if following ==# s:layoutEnd
-					call Log('layout end')
 					break
 				elseif following ==# s:layoutItem || following ==# s:semicolon
-					call Log('layout item')
 				else
 					return #{status: s:retError}
 				endif
@@ -242,10 +258,7 @@ function s:AddIndent(Parser) abort
 	function s:AddIndentRet(p) abort closure
 		eval a:p.indentations->add(a:p.indentations[-1] + shiftwidth())
 		let result = a:Parser(a:p)
-		let status = result.status
-		if !(status == s:retFinished)
-			eval a:p.indentations->remove(-1)
-		endif
+		if result.status != s:retFinished | eval a:p.indentations->remove(-1) | endif
 		return result
 	endfunction
 	return funcref('s:AddIndentRet')
@@ -256,16 +269,16 @@ function s:WithStarter(p, parser) abort
 	return a:p->a:parser()
 endfunction
 
+let s:DeclarationLayout = s:Layout(s:Lazy({-> s:Declaration}))
+
 let s:expression_list = {
-			\ s:where: funcref('s:WithStarter'),
+			\ s:value: s:Token(s:value),
+			\ s:operator: s:Token(s:operator),
+			\ s:let: s:Token(s:let)->s:Seq(s:DeclarationLayout, s:Token(s:in), s:Lazy({-> s:Expression})),
+			\ s:where: s:Token(s:where)->s:Seq(s:DeclarationLayout),
 			\ }
 
-let s:Where = s:Token(s:where)->s:Seq(s:Layout(s:Lazy({-> s:Expression})))
-
-let s:Expression = s:AddIndent(s:Many(s:Or(
-			\ s:Token(s:value), s:Token(s:operator)
-			\ ))
-			\ ->s:Seq(s:Where->s:Opt()))
+let s:Expression = s:AddIndent(s:FromDict(s:expression_list)->s:Many())
 
 function s:Separated(p, parser, separator, stmt_sep) abort
 	call a:parser(a:p)
