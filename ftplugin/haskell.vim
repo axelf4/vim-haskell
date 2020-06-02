@@ -9,68 +9,53 @@ const s:endtoken = -1
 const s:layoutEnd = -2
 " A new item in a layout list
 const s:layoutItem = -3
-const [s:if, s:then, s:else, s:let, s:in, s:where,
+const [s:value,
 			\ s:lbrace, s:semicolon,
-			\ s:operator, s:value]
+			\ s:operator,
+			\ s:if, s:then, s:else, s:let, s:in, s:where]
 			\ = range(1, 10)
-const s:syn2Token = {
-			\ "VarId": s:value,
-			\ "hsNumber": s:value,
-			\ }
 
 " Shiftwidth
 const s:ind = 2
 
-let s:search_pat = '\%#\%('
+" Regex for matching tokens
+" Note: Vim regexes only supports nine sub-Patterns...
+"
 " Keywords
-let s:search_pat ..= '\%(\(if\)\|\(then\)\|\(else\)\|\(let\)\|\(in\)\|\(where\)\)[[:alnum:]''_]\@!'
+let s:search_pat = '\(if\|then\|else\|let\|in\|where\)[[:alnum:]''_]\@!'
+" Values
+let s:search_pat ..= '\|\([[:alnum:]''_]\+\)'
 " Braces and semicolons
 let s:search_pat ..= '\|\({\)\|\(;\)'
 " Special symbols
 " let s:search_pat ..= '\|\%(\(=\)\)[-:!#$%&*+./<=>?@\\\\^|~]\@!'
 " Operators
 let s:search_pat ..= '\|\([-:!#$%&*+./<=>?@\\\\^|~`]\+\)'
-let s:search_pat ..= '\)'
 
-" Skips forward to next non-blank and returns whether one was found.
-function s:SkipWs(stopline) abort
-	return search('\S', 'cWz', a:stopline) != 0
-endfunction
+let s:str2Tok = {
+			\ 'if': s:if, 'then': s:then, 'else': s:else, 'let': s:let, 'in': s:in, 'where': s:where,
+			\ }
 
-" Returns true if hit EOF.
-function s:SkipChar(p) abort
-	let [lnum, col] = [line('.'), col('.')]
-	" Move from end to next char
-	execute "normal 1\<Space>"
-	" If cursor didn't move => EOF
-	if line('.') == lnum && col('.') == col
-		let a:p.eof = 1
-		return 0
-	endif
-	return 1
-endfunction
-
-" Lexes the token under the cursor and moves to the character after.
-function s:LexToken(p) abort
-	let match = search(s:search_pat, 'cepWz')
-	if match > 0
-		call s:SkipChar(a:p)
-		return match - 1
-	endif
-
-	let id = synID(line('.'), col('.'), 1)
-	let token = s:syn2Token->get(id->synIDattr('name'), v:null)
-	if token is v:null
-		throw printf('bad match `%s` (%s) %s, %d:%d', getline(line('.'))[col('.') - 1:], id, id->synIDattr('name'), line('.'), col('.'))
-	endif
-	" Skip while same synID
-	" Note: Requires that it cannot immediately follow another with same ID
-	while s:SkipChar(a:p) && synID(line('.'), col('.'), 1) ==# id | endwhile
-	return token
+" Lex the next token and move the cursor to its start.
+" Returns "s:endtoken" if no token was found.
+function s:LexToken(stopline, at_cursor) abort
+	while 1
+		let match = search(s:search_pat, (a:at_cursor ? 'c' : '') .. 'pWz', a:stopline)
+		if match == 0
+			return s:endtoken
+		endif
+		if synID(line('.'), col('.'), 1)->synIDattr('name') =~# 'hs\%(Line\|Block\)Comment'
+			continue
+		endif
+		if match == 2 " Keyword
+			return s:str2Tok[expand('<cword>')]
+		endif
+		return match - 1 - 1
+	endwhile
 endfunction
 
 function Parse() abort
-	let parser = #{token: v:null, eof: 0,
+	let parser = #{token: v:null, nextToken: v:null,
 				\ currentLine: 1, currentCol: 1,
 				\ initial_line: line('.'),
 				\ layoutCtx: 0,
@@ -79,34 +64,38 @@ function Parse() abort
 				\ }
 
 	function parser.next() abort
-		" Skip whitespace
-		if self.token is s:endtoken || self.eof
-					\ || !s:SkipWs(self.initial_line)
-			let self.token = s:endtoken
-		elseif line('.') >= self.initial_line
-			let self.token = s:endtoken
-			if line('.') == self.initial_line | let self.following = self->s:LexToken() | endif
-		else
-			let [prevLine, prevCol] = [self.currentLine, self.currentCol]
-			let [self.currentLine, self.currentCol] = [line('.'), col('.')]
+		if self.token is s:endtoken | return s:endtoken | endif
 
-			let implicitLayoutActive = self.layoutCtx > 0
-			if prevLine < self.currentLine && implicitLayoutActive
-				let layoutIndent = self.layoutCtx
+		" If has pending token: Return it
+		if self.nextToken isnot v:null
+			let self.token = self.nextToken
+			let self.nextToken = v:null
+			return self.token
+		endif
 
-				if self.currentCol < layoutIndent
-					let self.token = s:layoutEnd
-				elseif self.currentCol == layoutIndent
-					let self.token = s:layoutItem
-				else
-					let self.token = self->s:LexToken()
-				endif
+		let [prevLine, prevCol] = [self.currentLine, self.currentCol]
+		" Lex the next token and jump to its start
+		let self.token = s:LexToken(self.initial_line, self.token is v:null)
+		let [self.currentLine, self.currentCol] = [line('.'), col('.')]
+		if self.currentLine >= self.initial_line
+			let self.token = s:endtoken
+		endif
+
+		" Layout rule if implicit layout is active
+		if prevLine < self.currentLine && self.layoutCtx > 0
+			let layoutIndent = self.layoutCtx
+
+			let self.nextToken = self.token
+			if self.currentCol < layoutIndent
+				let self.token = s:layoutEnd
+			elseif self.currentCol == layoutIndent
+				let self.token = s:layoutItem
 			else
-				let self.token = self->s:LexToken()
+				let self.nextToken = v:null
 			endif
 		endif
 
-		call Log('parserd: ' .. self.token)
+		call Log('parsed: ' .. self.token)
 		echom 'parsed:' self.token
 		return self.token
 	endfunction
