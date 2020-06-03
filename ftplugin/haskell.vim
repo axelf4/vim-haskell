@@ -1,8 +1,23 @@
 " Vim filetype plugin
 " Language: Haskell
-" Maintainer: Axel Forsman <axelsfor@gmail.com>
+" Author: Axel Forsman <axelsfor@gmail.com>
+
+if exists('b:did_ftplugin') | finish | endif
+let [b:did_ftplugin, b:did_indent] = [1, 1]
 
 setlocal tabstop=8 shiftwidth=2 expandtab
+setlocal indentexpr=GetHaskellIndent() indentkeys=0},0),0],0,,0;!^F,o,O
+
+inoremap <buffer> <silent> <expr> <Tab> <SID>TabBSExpr("\<Tab>")
+inoremap <buffer> <silent> <expr> <BS> <SID>TabBSExpr("\<BS>")
+inoremap <buffer> <silent> <expr> <C-T> <SID>TabBSExpr("\<C-T>")
+inoremap <buffer> <silent> <expr> <C-D> <SID>TabBSExpr("\<C-D>")
+" Haskell indenting is ambiguous
+nnoremap <buffer> = <Nop>
+inoremap <buffer> <C-F> <Nop>
+
+if exists("*GetHaskellIndent") | finish | endif
+let s:keepcpo = &cpo | set cpo&vim
 
 const s:endtoken = -1
 " End of a layout list
@@ -12,8 +27,8 @@ const s:layoutItem = -3
 const [s:value,
 			\ s:lbrace, s:semicolon,
 			\ s:operator,
-			\ s:if, s:then, s:else, s:let, s:in, s:where]
-			\ = range(1, 10)
+			\ s:if, s:then, s:else, s:let, s:in, s:do, s:where]
+			\ = range(1, 11)
 
 " Shiftwidth
 const s:ind = 2
@@ -22,7 +37,7 @@ const s:ind = 2
 " Note: Vim regexes only supports nine sub-Patterns...
 "
 " Keywords
-let s:search_pat = '\(if\|then\|else\|let\|in\|where\)[[:alnum:]''_]\@!'
+let s:search_pat = '\C\(if\|then\|else\|let\|in\|do\|where\)[[:alnum:]''_]\@!'
 " Values
 let s:search_pat ..= '\|\([[:alnum:]''_]\+\)'
 " Braces and semicolons
@@ -33,7 +48,8 @@ let s:search_pat ..= '\|\({\)\|\(;\)'
 let s:search_pat ..= '\|\([-:!#$%&*+./<=>?@\\\\^|~`]\+\)'
 
 let s:str2Tok = {
-			\ 'if': s:if, 'then': s:then, 'else': s:else, 'let': s:let, 'in': s:in, 'where': s:where,
+			\ 'if': s:if, 'then': s:then, 'else': s:else, 'let': s:let, 'in': s:in,
+			\ 'do': s:do, 'where': s:where,
 			\ }
 
 " Lex the next token and move the cursor to its start.
@@ -54,10 +70,25 @@ function s:LexToken(stopline, at_cursor) abort
 	endwhile
 endfunction
 
-function Parse() abort
+" Note: May move the cursor.
+function HaskellParse() abort
+	let initial_line = line('.')
+
+	" Move to first line with zero indentation
+	while 1
+		let match = search('^\S\|\%^', 'bW')
+		if synID(line('.'), col('.'), 1)->synIDattr('name')
+					\ !~# 'hs\%(Line\|Block\)Comment\|hsString'
+					\ || line('.') <= 1
+			break
+		endif
+	endwhile
+
+	if line('.') == initial_line | return [0] | endif " At beginning of file
+
 	let parser = #{token: v:null, nextToken: v:null,
 				\ currentLine: 1, currentCol: 1,
-				\ initial_line: line('.'),
+				\ initial_line: initial_line,
 				\ layoutCtx: 0,
 				\ indentations: [0],
 				\ following: s:endtoken,
@@ -76,9 +107,16 @@ function Parse() abort
 		let [prevLine, prevCol] = [self.currentLine, self.currentCol]
 		" Lex the next token and jump to its start
 		let self.token = s:LexToken(self.initial_line, self.token is v:null)
-		let [self.currentLine, self.currentCol] = [line('.'), col('.')]
-		if self.currentLine >= self.initial_line
+		if line('.') == self.initial_line
+			let self.following = self.token
+		elseif self.token is s:endtoken
+			let self.following = s:LexToken(0, 0) " Zero stopline means absence
+		endif
+		if line('.') >= self.initial_line
 			let self.token = s:endtoken
+		endif
+		if self.token isnot s:endtoken
+			let [self.currentLine, self.currentCol] = [line('.'), col('.')]
 		endif
 
 		" Layout rule if implicit layout is active
@@ -95,29 +133,21 @@ function Parse() abort
 			endif
 		endif
 
-		call Log('parsed: ' .. self.token)
-		echom 'parsed:' self.token
 		return self.token
 	endfunction
 
 	function parser.peek() abort
+		" TODO Just lex token initially, to make sure it is never null
 		return self.token is v:null ? self.next() : self.token
 	endfunction
 
-	let save_cursor = getcurpos()
-	try
-		call cursor(1, 1) " TODO Only move cursor to first line with zero indent
-
-		let result = s:TopLevel(parser)
-	finally
-		call setpos('.', save_cursor)
-	endtry
-
-	return parser.indentations
+	let result = s:TopLevel(parser)
+	return parser.indentations->sort('n')
 endfunction
 
 " s:retNone is same as s:retError except not even the first token matched.
 " TODO Remove s:retError and just skip forward instead
+" FIXME Remove s:retFinished too, and instead do p.peek() == s:endtoken?
 const [s:retOk, s:retNone, s:retError, s:retFinished] = [1, 2, 3, 4]
 
 function s:Token(token) abort
@@ -207,34 +237,35 @@ endfunction
 
 function s:Layout(Item) abort
 	function! s:LayoutRet(p) abort closure
-		if a:p.peek() is s:lbrace
+		let token = a:p.peek()
+		if token is s:lbrace
 			throw 'Not yet implemented'
+		elseif token == s:endtoken
+			eval a:p.indentations->add(indent(a:p.currentLine) + shiftwidth())
+			return #{status: s:retFinished}
 		else
 			let prevLayoutCtx = a:p.layoutCtx
 			" Store indentation column of the enclosing layout context
-			let a:p.layoutCtx = a:p.currentCol
-			eval a:p.indentations->add(a:p.layoutCtx - 1)
+			let a:p.layoutCtx = a:p.currentCol " FIXME: Handle tabs
 
 			while 1
 				let result = a:Item(a:p)
 				let status = result.status
 				if status == s:retNone | break | endif " parse-error clause
 
-				if status == s:retFinished || status == s:retError
-					return result
-				endif
-
 				let following = a:p.peek()
-				call a:p.next()
-				if following ==# s:layoutEnd
+				if following == s:endtoken
+					eval a:p.indentations->add(a:p.layoutCtx - 1)
+					return #{status: s:retFinished}
+				endif
+				if following == s:layoutEnd || following == s:layoutItem || following == s:semicolon
+					call a:p.next()
+				endif
+				if !(following == s:layoutItem || following == s:semicolon)
 					break
-				elseif following ==# s:layoutItem || following ==# s:semicolon
-				else
-					return #{status: s:retError}
 				endif
 			endwhile
 
-			eval a:p.indentations->remove(-1)
 			let a:p.layoutCtx = prevLayoutCtx
 		endif
 
@@ -245,26 +276,29 @@ endfunction
 
 function s:AddIndent(Parser) abort
 	function s:AddIndentRet(p) abort closure
-		eval a:p.indentations->add(a:p.indentations[-1] + shiftwidth())
+		call a:p.peek() " TODO Unnecessary?
+		let currentIndent = max([indent(a:p.currentLine), a:p.layoutCtx - 1])
 		let result = a:Parser(a:p)
-		if result.status != s:retFinished | eval a:p.indentations->remove(-1) | endif
+		if result.status == s:retFinished
+			eval a:p.indentations->add(currentIndent + shiftwidth())
+		endif
 		return result
 	endfunction
 	return funcref('s:AddIndentRet')
 endfunction
 
-function s:WithStarter(p, parser) abort
-	call a:p.next()
-	return a:p->a:parser()
-endfunction
-
+let s:ExpressionLayout = s:Layout(s:Lazy({-> s:Expression}))
 let s:DeclarationLayout = s:Layout(s:Lazy({-> s:Declaration}))
+
+" TODO Should only declaration be allowed to have while?
 
 let s:expression_list = {
 			\ s:value: s:Token(s:value),
 			\ s:operator: s:Token(s:operator),
 			\ s:let: s:Token(s:let)->s:Seq(s:DeclarationLayout, s:Token(s:in), s:Lazy({-> s:Expression})),
 			\ s:where: s:Token(s:where)->s:Seq(s:DeclarationLayout),
+			\ s:if: s:Token(s:if)->s:Seq(s:Lazy({-> s:Expression}), s:Token(s:then), s:Lazy({-> s:Expression}), s:Seq(s:Token(s:else), s:Lazy({-> s:Expression}))->s:Opt()),
+			\ s:do: s:Token(s:do)->s:Seq(s:ExpressionLayout),
 			\ }
 
 let s:Expression = s:AddIndent(s:FromDict(s:expression_list)->s:Many())
@@ -283,12 +317,34 @@ let s:Declaration = s:Expression
 " Parse topdecls.
 let s:TopLevel = s:Declaration
 
-" Haskell indenting is ambiguous
-nnoremap <buffer> = <Nop>
+function s:TabBSExpr(key) abort
+	" If there are non-blank characters to the left of the cursor
+	if (a:key ==# "\<Tab>" || a:key ==# "\<BS>")
+				\ && indent(line('.')) + 1 < col('.') " FIXME
+		return a:key
+	endif
+	let s:indent_dir = a:key ==# "\<Tab>" || a:key ==# "\<C-T>" ? 1 : -1
+	return "\<C-F>"
+endfunction
 
-setlocal indentexpr=GetHaskellIndent()
+let s:indent_dir = 0
 
 function GetHaskellIndent() abort
-	let indentations = Parse()
-	return indentations[-1]
+	let prevIndent = indent(s:indent_dir == 0 ? prevnonblank(v:lnum) : v:lnum)
+	let indentations = HaskellParse()
+
+	let [dir, s:indent_dir] = [s:indent_dir, 0]
+	if dir >= 0
+		for indent in indentations
+			if indent > prevIndent | return indent | endif
+		endfor
+		return indentations[-1]
+	else
+		for indent in indentations->reverse()
+			if indent < prevIndent | return indent | endif
+		endfor
+		return indentations[-1] " List was reversed in-place
+	endif
 endfunction
+
+let &cpo = s:keepcpo | unlet s:keepcpo
