@@ -8,6 +8,8 @@ let [b:did_ftplugin, b:did_indent] = [1, 1]
 setlocal tabstop=8 shiftwidth=2 expandtab
 setlocal indentexpr=GetHaskellIndent() indentkeys=0},0),0],0,,0;!^F,o,O
 
+setlocal comments=:--,s:{-,e:-} commentstring=--\ %s
+
 inoremap <buffer> <silent> <expr> <Tab> <SID>TabBSExpr("\<Tab>")
 inoremap <buffer> <silent> <expr> <BS> <SID>TabBSExpr("\<BS>")
 inoremap <buffer> <silent> <expr> <C-T> <SID>TabBSExpr("\<C-T>")
@@ -15,6 +17,13 @@ inoremap <buffer> <silent> <expr> <C-D> <SID>TabBSExpr("\<C-D>")
 " Haskell indenting is ambiguous
 nnoremap <buffer> = <Nop>
 inoremap <buffer> <C-F> <Nop>
+
+let b:undo_ftplugin = 'setlocal tabstop< shiftwidth< expandtab<
+			\ indentexpr< indentkeys<
+			\ comments< commentstring<
+			\| iunmap <buffer> <Tab>| iunmap <buffer> <BS>
+			\| iunmap <buffer> <C-T>| iunmap <buffer> <C-D>
+			\| nunmap <buffer> =| iunmap <buffer> <C-F>'
 
 if exists("*GetHaskellIndent") | finish | endif
 let s:keepcpo = &cpo | set cpo&vim
@@ -55,11 +64,13 @@ let s:str2Tok = {
 " Lex the next token and move the cursor to its start.
 " Returns "s:endtoken" if no token was found.
 function s:LexToken(stopline, at_cursor) abort
+	let at_cursor = a:at_cursor
 	while 1
-		let match = search(s:search_pat, (a:at_cursor ? 'c' : '') .. 'pWz', a:stopline)
+		let match = search(s:search_pat, (at_cursor ? 'c' : '') .. 'pWz', a:stopline)
 		if match == 0
 			return s:endtoken
 		endif
+		let at_cursor = 0
 		if synID(line('.'), col('.'), 1)->synIDattr('name') =~# 'hs\%(Line\|Block\)Comment'
 			continue
 		endif
