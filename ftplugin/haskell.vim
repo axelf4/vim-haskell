@@ -27,8 +27,8 @@ const s:layoutItem = -3
 const [s:value,
 			\ s:lbrace, s:semicolon,
 			\ s:operator,
-			\ s:if, s:then, s:else, s:let, s:in, s:do, s:where]
-			\ = range(1, 11)
+			\ s:if, s:then, s:else, s:let, s:in, s:do, s:case, s:of, s:where]
+			\ = range(1, 13)
 
 " Shiftwidth
 const s:ind = 2
@@ -37,7 +37,7 @@ const s:ind = 2
 " Note: Vim regexes only supports nine sub-Patterns...
 "
 " Keywords
-let s:search_pat = '\C\(if\|then\|else\|let\|in\|do\|where\)[[:alnum:]''_]\@!'
+let s:search_pat = '\C\(if\|then\|else\|let\|in\|do\|case\|of\|where\)[[:alnum:]''_]\@!'
 " Values
 let s:search_pat ..= '\|\([[:alnum:]''_]\+\)'
 " Braces and semicolons
@@ -49,7 +49,7 @@ let s:search_pat ..= '\|\([-:!#$%&*+./<=>?@\\\\^|~`]\+\)'
 
 let s:str2Tok = {
 			\ 'if': s:if, 'then': s:then, 'else': s:else, 'let': s:let, 'in': s:in,
-			\ 'do': s:do, 'where': s:where,
+			\ 'do': s:do, 'case': s:case, 'of': s:of, 'where': s:where,
 			\ }
 
 " Lex the next token and move the cursor to its start.
@@ -299,6 +299,7 @@ let s:expression_list = {
 			\ s:where: s:Token(s:where)->s:Seq(s:DeclarationLayout),
 			\ s:if: s:Token(s:if)->s:Seq(s:Lazy({-> s:Expression}), s:Token(s:then), s:Lazy({-> s:Expression}), s:Seq(s:Token(s:else), s:Lazy({-> s:Expression}))->s:Opt()),
 			\ s:do: s:Token(s:do)->s:Seq(s:ExpressionLayout),
+			\ s:case: s:Token(s:case)->s:Seq(s:Lazy({-> s:Expression}), s:Token(s:of), s:ExpressionLayout),
 			\ }
 
 let s:Expression = s:AddIndent(s:FromDict(s:expression_list)->s:Many())
