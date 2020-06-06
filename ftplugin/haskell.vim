@@ -10,20 +10,28 @@ setlocal indentexpr=GetHaskellIndent() indentkeys=0},0),0],0,,0;!^F,o,O
 
 setlocal comments=:--,s:{-,e:-} commentstring=--\ %s
 
-inoremap <buffer> <silent> <expr> <Tab> <SID>TabBSExpr("\<Tab>")
-inoremap <buffer> <silent> <expr> <BS> <SID>TabBSExpr("\<BS>")
-inoremap <buffer> <silent> <expr> <C-T> <SID>TabBSExpr("\<C-T>")
-inoremap <buffer> <silent> <expr> <C-D> <SID>TabBSExpr("\<C-D>")
+if !hasmapto('<Plug>HaskellIndentN', 'i')
+	imap <buffer> <C-T> <Plug>HaskellIndentN
+endif
+if !hasmapto('<Plug>HaskellIndentP', 'i')
+	imap <buffer> <C-D> <Plug>HaskellIndentP
+endif
+imap <buffer> <expr> <Tab> <SID>BeforeNonBlank() ? "\<Plug>HaskellIndentN" : "\<Tab>"
+imap <buffer> <expr> <BS> <SID>BeforeNonBlank() && col('.') > 1 ? "\<Plug>HaskellIndentP" : "\<BS>"
+inoremap <buffer> <unique> <expr> <Plug>HaskellIndentN <SID>CycleIndentExpr(1)
+inoremap <buffer> <unique> <expr> <Plug>HaskellIndentP <SID>CycleIndentExpr(-1)
+
 " Haskell indenting is ambiguous
-nnoremap <buffer> = <Nop>
+noremap <buffer> = <Nop>
 inoremap <buffer> <C-F> <Nop>
 
 let b:undo_ftplugin = 'setlocal tabstop< shiftwidth< expandtab<
 			\ indentexpr< indentkeys<
 			\ comments< commentstring<
-			\| iunmap <buffer> <Tab>| iunmap <buffer> <BS>
+			\| iunmap <buffer> <Plug>HaskellIndentN| iunmap <buffer> <Plug>HaskellIndentP
 			\| iunmap <buffer> <C-T>| iunmap <buffer> <C-D>
-			\| nunmap <buffer> =| iunmap <buffer> <C-F>'
+			\| iunmap <buffer> <Tab>| iunmap <buffer> <BS>
+			\| unmap <buffer> =| iunmap <buffer> <C-F>'
 
 if exists("*GetHaskellIndent") | finish | endif
 let s:keepcpo = &cpo | set cpo&vim
@@ -38,9 +46,6 @@ const [s:value,
 			\ s:operator,
 			\ s:if, s:then, s:else, s:let, s:in, s:do, s:case, s:of, s:where]
 			\ = range(1, 13)
-
-" Shiftwidth
-const s:ind = 2
 
 " Regex for matching tokens
 " Note: Vim regexes only supports nine sub-Patterns...
@@ -320,29 +325,27 @@ function s:Separated(p, parser, separator, stmt_sep) abort
 	" TODO
 endfunction
 
-" Parse a declaration.
-"
-" This is used for both let expressions and top-level declarations, therefore
-" it needs to be able to parse multiple ones.
 let s:Declaration = s:Expression
 
 " Parse topdecls.
 let s:TopLevel = s:Declaration
 
-function s:TabBSExpr(key) abort
-	" If there are non-blank characters to the left of the cursor
-	if (a:key ==# "\<Tab>" || a:key ==# "\<BS>")
-				\ && indent(line('.')) + 1 < col('.') " FIXME
-		return a:key
-	endif
-	let s:indent_dir = a:key ==# "\<Tab>" || a:key ==# "\<C-T>" ? 1 : -1
+" Return whether all characters to the left of the cursor are blank.
+function s:BeforeNonBlank() abort
+	return col('.') <= indent(line('.')) + 1 " FIXME
+endfunction
+
+" Set direction for indent cycling and return RHS for indenting.
+" Note: Leaving Insert mode with blank line would reset indent.
+function s:CycleIndentExpr(dir) abort
+	let s:indent_dir = a:dir
 	return "\<C-F>"
 endfunction
 
 let s:indent_dir = 0
 
 function GetHaskellIndent() abort
-	let prevIndent = indent(s:indent_dir == 0 ? prevnonblank(v:lnum) : v:lnum)
+	let prevIndent = indent(s:indent_dir ? v:lnum : prevnonblank(v:lnum))
 	let indentations = HaskellParse()
 
 	let [dir, s:indent_dir] = [s:indent_dir, 0]
