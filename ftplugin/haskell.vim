@@ -306,13 +306,10 @@ endfunction
 let s:ExpressionLayout = s:Layout(s:Lazy({-> s:Expression}))
 let s:DeclarationLayout = s:Layout(s:Lazy({-> s:Declaration}))
 
-" TODO Should only declaration be allowed to have while?
-
 let s:expression_list = {
 			\ s:value: s:Token(s:value),
 			\ s:operator: s:Token(s:operator),
 			\ s:let: s:Token(s:let)->s:Seq(s:DeclarationLayout, s:Token(s:in), s:Lazy({-> s:Expression})),
-			\ s:where: s:Token(s:where)->s:Seq(s:DeclarationLayout),
 			\ s:if: s:Token(s:if)->s:Seq(s:Lazy({-> s:Expression}), s:Token(s:then), s:Lazy({-> s:Expression}), s:Seq(s:Token(s:else), s:Lazy({-> s:Expression}))->s:Opt()),
 			\ s:do: s:Token(s:do)->s:Seq(s:ExpressionLayout),
 			\ s:case: s:Token(s:case)->s:Seq(s:Lazy({-> s:Expression}), s:Token(s:of), s:ExpressionLayout),
@@ -320,12 +317,8 @@ let s:expression_list = {
 
 let s:Expression = s:AddIndent(s:FromDict(s:expression_list)->s:Many())
 
-function s:Separated(p, parser, separator, stmt_sep) abort
-	call a:parser(a:p)
-	" TODO
-endfunction
-
 let s:Declaration = s:Expression
+			\ ->s:Seq(s:Opt(s:Token(s:where)->s:Seq(s:DeclarationLayout)))
 
 " Parse topdecls.
 let s:TopLevel = s:Declaration

@@ -22,7 +22,7 @@ function Test_BasicWhere2() abort
 	  where bar = 4
 	END
 	call s:Test(text,
-				\ [#{lnum: 3, points: [0, 2, 8, 10]}])
+				\ [#{lnum: 3, points: [0, 8, 10]}])
 endfunction
 
 function Test_BasicWhere() abort
@@ -34,7 +34,7 @@ function Test_BasicWhere() abort
 	       z foo
 	END
 	call s:Test(text,
-				\ [#{lnum: 6, points: [0, 2, 7, 9]}])
+				\ [#{lnum: 6, points: [0, 7, 9]}])
 endfunction
 
 function Test_MultipleDefs() abort
@@ -59,5 +59,5 @@ function Test_AWhereAndLet() abort
 	       z foo
 	END
 	call s:Test(text,
-				\ [#{lnum: 7, points: [0, 2, 7, 9]}])
+				\ [#{lnum: 7, points: [0, 7, 9]}])
 endfunction
