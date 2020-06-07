@@ -69,21 +69,15 @@ let s:str2Tok = {
 " Lex the next token and move the cursor to its start.
 " Returns "s:endtoken" if no token was found.
 function s:LexToken(stopline, at_cursor) abort
-	let at_cursor = a:at_cursor
-	while 1
-		let match = search(s:search_pat, (at_cursor ? 'c' : '') .. 'pWz', a:stopline)
-		if match == 0
-			return s:endtoken
-		endif
-		let at_cursor = 0
-		if synID(line('.'), col('.'), 1)->synIDattr('name') =~# 'hs\%(Line\|Block\)Comment'
-			continue
-		endif
-		if match == 2 " Keyword
-			return s:str2Tok[expand('<cword>')]
-		endif
-		return match - 1 - 1
-	endwhile
+	let match = search(s:search_pat, (a:at_cursor ? 'c' : '') .. 'pWz', a:stopline, 0,
+				\ {-> synID(line('.'), col('.'), 1)->synIDattr('name') =~# 'hs\%(Line\|Block\)Comment'})
+	if match == 0
+		return s:endtoken
+	endif
+	if match == 2 " Keyword
+		return s:str2Tok[expand('<cword>')]
+	endif
+	return match - 1 - 1
 endfunction
 
 " Note: May move the cursor.
@@ -91,14 +85,11 @@ function HaskellParse() abort
 	let initial_line = line('.')
 
 	" Move to first line with zero indentation
-	while 1
-		let match = search('^\S\|\%^', 'bW')
-		if synID(line('.'), col('.'), 1)->synIDattr('name')
-					\ !~# 'hs\%(Line\|Block\)Comment\|hsString'
-					\ || line('.') <= 1
-			break
-		endif
-	endwhile
+	normal! -
+	if !search('^\S\|\%^', 'bcW', 0, 0, {-> synID(line('.'), col('.'), 1)->synIDattr('name')
+				\ =~# 'hs\%(Line\|Block\)Comment\|hsString'})
+		call cursor(1, 1)
+	endif
 
 	if line('.') == initial_line | return [0] | endif " At beginning of file
 
