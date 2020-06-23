@@ -5,7 +5,7 @@ function s:Test(text, lines) abort
 
 	for assertion in a:lines
 		call cursor(assertion.lnum, 1)
-		call assert_equal(assertion.points, HaskellParse())
+		call assert_equal(assertion.points, HaskellParse()->uniq())
 	endfor
 endfunction
 
@@ -60,4 +60,12 @@ function Test_AWhereAndLet() abort
 	END
 	call s:Test(text,
 				\ [#{lnum: 7, points: [0, 7, 9]}])
+endfunction
+
+function Test_String() abort
+	let text =<< trim END
+	foo = let
+	  "bar
+	END
+	call s:Test(text, [#{lnum: 3, points: [0, 2, 4]}])
 endfunction

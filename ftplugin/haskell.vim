@@ -53,7 +53,7 @@ const [s:value,
 " Keywords
 let s:search_pat = '\C\(if\|then\|else\|let\|in\|do\|case\|of\|where\)[[:alnum:]''_]\@!'
 " Values
-let s:search_pat ..= '\|\([[:alnum:]''_]\+\)'
+let s:search_pat ..= '\|\([[:alnum:]''_]\+\|"\%(\\\_s\+\\\?\|\\\S\|[^"]\)*\%("\|\_$\)\)'
 " Braces and semicolons
 let s:search_pat ..= '\|\({\)\|\(;\)'
 " Special symbols
