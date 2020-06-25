@@ -6,7 +6,7 @@ if exists('b:did_ftplugin') | finish | endif
 let [b:did_ftplugin, b:did_indent] = [1, 1]
 
 setlocal tabstop=8 shiftwidth=2 expandtab
-setlocal indentexpr=GetHaskellIndent() indentkeys=0},0),0],0,,0;!^F,o,O
+setlocal indentexpr=GetHaskellIndent() indentkeys=!^F,o,O
 
 setlocal comments=:--,s:{-,e:-} commentstring=--\ %s
 
@@ -34,7 +34,7 @@ let b:undo_ftplugin = 'setlocal tabstop< shiftwidth< expandtab<
 			\| unmap <buffer> =| iunmap <buffer> <C-F>'
 
 if exists("*GetHaskellIndent") | finish | endif
-let s:keepcpo = &cpo | set cpo&vim
+const s:keepcpo = &cpo | set cpo&vim
 
 const s:endtoken = -1
 " End of a layout list
@@ -42,10 +42,11 @@ const s:layoutEnd = -2
 " A new item in a layout list
 const s:layoutItem = -3
 const [s:value,
-			\ s:lbrace, s:semicolon,
 			\ s:operator,
+			\ s:comma, s:semicolon, s:lbrace, s:rbrace,
+			\ s:lparen, s:rparen, s:lbracket, s:rbracket,
 			\ s:if, s:then, s:else, s:let, s:in, s:do, s:case, s:of, s:where]
-			\ = range(1, 13)
+			\ = range(1, 19)
 
 " Regex for matching tokens
 " Note: Vim regexes only supports nine sub-Patterns...
@@ -54,16 +55,16 @@ const [s:value,
 let s:search_pat = '\C\(if\|then\|else\|let\|in\|do\|case\|of\|where\)[[:alnum:]''_]\@!'
 " Values
 let s:search_pat ..= '\|\([[:alnum:]''_]\+\|"\%(\\\_s\+\\\?\|\\\S\|[^"]\)*\%("\|\_$\)\)'
-" Braces and semicolons
-let s:search_pat ..= '\|\({\)\|\(;\)'
-" Special symbols
-" let s:search_pat ..= '\|\%(\(=\)\)[-:!#$%&*+./<=>?@\\\\^|~]\@!'
+" Special single-character symbols
+let s:search_pat ..= '\|\([,;(){}[\]]\)'
 " Operators
 let s:search_pat ..= '\|\([-:!#$%&*+./<=>?@\\\\^|~`]\+\)'
 
-let s:str2Tok = {
+const s:str2Tok = {
 			\ 'if': s:if, 'then': s:then, 'else': s:else, 'let': s:let, 'in': s:in,
 			\ 'do': s:do, 'case': s:case, 'of': s:of, 'where': s:where,
+			\ ',': s:comma, ';': s:semicolon, '{': s:lbrace, '}': s:rbrace,
+			\ '(': s:lparen, ')': s:rparen, '[': s:lbracket, ']': s:rbracket,
 			\ }
 
 " Lex the next token and move the cursor to its start.
@@ -71,13 +72,11 @@ let s:str2Tok = {
 function s:LexToken(stopline, at_cursor) abort
 	let match = search(s:search_pat, (a:at_cursor ? 'c' : '') .. 'pWz', a:stopline, 0,
 				\ {-> synID(line('.'), col('.'), 1)->synIDattr('name') =~# 'hs\%(Line\|Block\)Comment'})
-	if match == 0
-		return s:endtoken
-	endif
-	if match == 2 " Keyword
-		return s:str2Tok[expand('<cword>')]
-	endif
-	return match - 1 - 1
+	return match == 2 ? s:str2Tok[expand('<cword>')]
+				\ : match == 3 ? s:value
+				\ : match == 4 ? s:str2Tok[getline('.')[col('.') - 1]]
+				\ : match == 5 ? s:operator
+				\ : s:endtoken
 endfunction
 
 " Note: May move the cursor.
@@ -139,6 +138,8 @@ function HaskellParse() abort
 				let self.nextToken = v:null
 			endif
 		endif
+
+		echom "parsed:" self.token
 
 		return self.token
 	endfunction
@@ -281,8 +282,29 @@ function s:Layout(Item) abort
 	return funcref('s:LayoutRet')
 endfunction
 
+function s:Sep(Parser, sep) abort
+	function! s:SepRet(p) abort closure
+		let result = a:Parser(a:p)
+		let status = result.status
+		if status == s:retNone | return #{status: s:retNone} | endif
+		if status == s:retFinished | return #{status: s:retFinished} | endif
+
+		while a:p.peek() == a:sep
+			call a:p.next()
+
+			let result = a:Parser(a:p)
+			let status = result.status
+			if status == s:retNone | break | endif
+			if status == s:retFinished | return #{status: s:retFinished} | endif
+		endwhile
+
+		return #{status: s:retOk}
+	endfunction
+	return funcref('s:SepRet')
+endfunction
+
 function s:AddIndent(Parser) abort
-	function s:AddIndentRet(p) abort closure
+	function! s:AddIndentRet(p) abort closure
 		call a:p.peek() " TODO Unnecessary?
 		let currentIndent = max([indent(a:p.currentLine), a:p.layoutCtx - 1])
 		let result = a:Parser(a:p)
@@ -304,12 +326,15 @@ let s:expression_list = {
 			\ s:if: s:Token(s:if)->s:Seq(s:Lazy({-> s:Expression}), s:Token(s:then), s:Lazy({-> s:Expression}), s:Seq(s:Token(s:else), s:Lazy({-> s:Expression}))->s:Opt()),
 			\ s:do: s:Token(s:do)->s:Seq(s:ExpressionLayout),
 			\ s:case: s:Token(s:case)->s:Seq(s:Lazy({-> s:Expression}), s:Token(s:of), s:ExpressionLayout),
+			\ s:lparen: s:Seq(s:Token(s:lparen), s:Lazy({-> s:Expression})->s:Sep(s:comma), s:Token(s:rparen)),
+			\ s:lbracket: s:Seq(s:Token(s:lbracket), s:Lazy({-> s:Expression})->s:Sep(s:comma), s:Token(s:rbracket)),
+			\ s:lbrace: s:Seq(s:Token(s:lbrace), s:Lazy({-> s:Expression})->s:Sep(s:comma), s:Token(s:rbrace)),
 			\ }
 
 let s:Expression = s:AddIndent(s:FromDict(s:expression_list)->s:Many())
 
-let s:Declaration = s:Expression
-			\ ->s:Seq(s:Opt(s:Token(s:where)->s:Seq(s:DeclarationLayout)))
+let s:Declaration = s:Token(s:value)->s:Sep(s:comma)->s:Seq(s:Expression,
+			\ s:Opt(s:Token(s:where)->s:Seq(s:DeclarationLayout)))
 
 " Parse topdecls.
 let s:TopLevel = s:Declaration
