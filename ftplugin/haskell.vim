@@ -6,7 +6,7 @@ if exists('b:did_ftplugin') | finish | endif
 let [b:did_ftplugin, b:did_indent] = [1, 1]
 
 setlocal tabstop=8 shiftwidth=2 expandtab
-setlocal indentexpr=GetHaskellIndent() indentkeys=!^F,o,O
+setlocal indentexpr=GetHaskellIndent() indentkeys=0},0;,0),0],0,,!^F,o,O
 
 setlocal comments=:--,s:{-,e:-} commentstring=--\ %s
 
@@ -97,7 +97,6 @@ function HaskellParse() abort
 				\ initial_line: initial_line,
 				\ layoutCtx: 0,
 				\ indentations: [0],
-				\ following: s:endtoken,
 				\ }
 
 	function parser.next() abort
@@ -113,84 +112,57 @@ function HaskellParse() abort
 		let [prevLine, prevCol] = [self.currentLine, self.currentCol]
 		" Lex the next token and jump to its start
 		let self.token = s:LexToken(self.initial_line, self.token is v:null)
-		if line('.') == self.initial_line
-			let self.following = self.token
-		elseif self.token is s:endtoken
-			let self.following = s:LexToken(0, 0) " Zero stopline means absence
-		endif
-		if line('.') >= self.initial_line
-			let self.token = s:endtoken
-		endif
-		if self.token isnot s:endtoken
+
+		if line('.') < self.initial_line
 			let [self.currentLine, self.currentCol] = [line('.'), col('.')]
-		endif
 
-		" Layout rule if implicit layout is active
-		if prevLine < self.currentLine && self.layoutCtx > 0
-			let layoutIndent = self.layoutCtx
+			" Layout rule if implicit layout is active
+			if prevLine < self.currentLine && self.layoutCtx > 0
+				let layoutIndent = self.layoutCtx
 
-			let self.nextToken = self.token
-			if self.currentCol < layoutIndent
-				let self.token = s:layoutEnd
-			elseif self.currentCol == layoutIndent
-				let self.token = s:layoutItem
-			else
-				let self.nextToken = v:null
+				let self.nextToken = self.token
+				if self.currentCol < layoutIndent
+					let self.token = s:layoutEnd
+				elseif self.currentCol == layoutIndent
+					let self.token = s:layoutItem
+				else
+					let self.nextToken = v:null
+				endif
 			endif
+		elseif line('.') > self.initial_line
+			self.token = s:endtoken
 		endif
-
-		echom "parsed:" self.token
 
 		return self.token
 	endfunction
 
-	function parser.peek() abort
-		" TODO Just lex token initially, to make sure it is never null
-		return self.token is v:null ? self.next() : self.token
-	endfunction
+	let parser.token = parser.next()
 
 	let result = s:TopLevel(parser)
 	return parser.indentations->sort('n')
 endfunction
 
-" s:retNone is same as s:retError except not even the first token matched.
-" TODO Remove s:retError and just skip forward instead
-" FIXME Remove s:retFinished too, and instead do p.peek() == s:endtoken?
-const [s:retOk, s:retNone, s:retError, s:retFinished] = [1, 2, 3, 4]
+" Parser return statuses.
+"
+" - "s:retNone" means no token got parsed
+" - "s:retOk" means parser consumed (maybe partially) at least one token
+const [s:retNone, s:retOk, s:retFinished] = range(3)
 
 function s:Token(token) abort
 	function! s:TokenRet(p) abort closure
-		if a:p.peek() is s:endtoken | return #{status: s:retFinished} | endif
-		if a:p.peek() is a:token
+		if a:p.token is a:token
 			call a:p.next()
-			return #{status: s:retOk}
+			return s:retOk
 		endif
-		return #{status: s:retNone}
+		return s:retNone
 	endfunction
 	return funcref('s:TokenRet')
 endfunction
 
-function s:Or(...) abort
-	let alts = a:000
-	function! s:OrRet(p) abort closure
-		for Alt in alts
-			let result = Alt(a:p)
-			let status = result.status
-			if status == s:retOk || status == s:retFinished || status == s:retError
-				return result
-			endif
-		endfor
-		return #{status: s:retNone}
-	endfunction
-	return funcref('s:OrRet')
-endfunction
-
 function s:FromDict(dict) abort
 	function! s:FromDictRet(p) abort closure
-		if a:p.peek() == s:endtoken | return #{status: s:retFinished} | endif
-		let Parser = a:dict->get(a:p.peek(), v:null)
-		if Parser is v:null | return #{status: s:retNone} | endif
-		return Parser(a:p)
+		let Parser = a:dict->get(a:p.token, v:null)
+		return Parser is v:null ? s:retNone : Parser(a:p)
 	endfunction
 	return funcref('s:FromDictRet')
 endfunction
@@ -198,14 +170,13 @@ endfunction
 function s:Seq(...) abort
 	let alts = a:000
 	function! s:SeqRet(p) abort closure
+		let first = 1
 		for Alt in alts
 			let result = Alt(a:p)
-			let status = result.status
-			if status == s:retNone || status == s:retFinished || status == s:retError
-				return result
-			endif
+			if result != s:retOk | return first ? s:retNone : s:retOk | endif
+			let first = 0
 		endfor
-		return #{status: s:retOk}
+		return s:retOk
 	endfunction
 	return funcref('s:SeqRet')
 endfunction
@@ -215,13 +186,7 @@ function s:Many(Parser) abort
 		let first = 1
 		while 1
 			let result = a:Parser(a:p)
-			let status = result.status
-			if status == s:retNone
-				return #{status: first ? s:retNone : s:retOk}
-			endif
-			if status == s:retFinished || status == s:retError
-				return result
-			endif
+			if result == s:retNone | return first ? s:retNone : s:retOk | endif
 			let first = 0
 		endwhile
 	endfunction
@@ -237,20 +202,22 @@ function s:Lazy(Cb) abort
 	return funcref('s:LazyRet')
 endfunction
 
-let s:Empty = {-> #{status: s:retOk}}
-
 function s:Opt(Parser) abort
-	return s:Or(a:Parser, s:Empty)
+	function! s:OptRet(p) abort closure
+		call a:Parser(a:p)
+		return s:retOk
+	endfunction
+	return funcref('s:OptRet')
 endfunction
 
 function s:Layout(Item) abort
 	function! s:LayoutRet(p) abort closure
-		let token = a:p.peek()
+		let token = a:p.token
 		if token is s:lbrace
 			throw 'Not yet implemented'
 		elseif token == s:endtoken
 			eval a:p.indentations->add(indent(a:p.currentLine) + shiftwidth())
-			return #{status: s:retFinished}
+			return s:retOk
 		else
 			let prevLayoutCtx = a:p.layoutCtx
 			" Store indentation column of the enclosing layout context
@@ -258,18 +225,18 @@ function s:Layout(Item) abort
 
 			while 1
 				let result = a:Item(a:p)
-				let status = result.status
-				if status == s:retNone | break | endif " parse-error clause
+				if result == s:retNone | break | endif " parse-error clause
 
-				let following = a:p.peek()
-				if following == s:endtoken
+				let current = a:p.token
+				if current == s:endtoken
 					eval a:p.indentations->add(a:p.layoutCtx - 1)
-					return #{status: s:retFinished}
+					return s:retOk
 				endif
-				if following == s:layoutEnd || following == s:layoutItem || following == s:semicolon
+
+				if current == s:layoutEnd || current == s:layoutItem || current == s:semicolon
 					call a:p.next()
 				endif
-				if !(following == s:layoutItem || following == s:semicolon)
+				if !(current == s:layoutItem || current == s:semicolon)
 					break
 				endif
 			endwhile
@@ -277,7 +244,7 @@ function s:Layout(Item) abort
 			let a:p.layoutCtx = prevLayoutCtx
 		endif
 
-		return #{status: s:retOk}
+		return s:retOk
 	endfunction
 	return funcref('s:LayoutRet')
 endfunction
@@ -285,31 +252,26 @@ endfunction
 function s:Sep(Parser, sep) abort
 	function! s:SepRet(p) abort closure
 		let result = a:Parser(a:p)
-		let status = result.status
-		if status == s:retNone | return #{status: s:retNone} | endif
-		if status == s:retFinished | return #{status: s:retFinished} | endif
+		if result == s:retNone | return s:retOk | endif
 
-		while a:p.peek() == a:sep
+		while a:p.token == a:sep
 			call a:p.next()
 
 			let result = a:Parser(a:p)
-			let status = result.status
-			if status == s:retNone | break | endif
-			if status == s:retFinished | return #{status: s:retFinished} | endif
+			if result == s:retNone | break | endif
 		endwhile
 
-		return #{status: s:retOk}
+		return s:retOk
 	endfunction
 	return funcref('s:SepRet')
 endfunction
 
 function s:AddIndent(Parser) abort
 	function! s:AddIndentRet(p) abort closure
-		call a:p.peek() " TODO Unnecessary?
-		let currentIndent = max([indent(a:p.currentLine), a:p.layoutCtx - 1])
+		let startIndent = max([indent(a:p.currentLine), a:p.layoutCtx - 1])
 		let result = a:Parser(a:p)
-		if result.status == s:retFinished
-			eval a:p.indentations->add(currentIndent + shiftwidth())
+		if result == s:retOk && a:p.token == s:endtoken
+			eval a:p.indentations->add(startIndent + shiftwidth())
 		endif
 		return result
 	endfunction
@@ -323,7 +285,7 @@ let s:expression_list = {
 			\ s:value: s:Token(s:value),
 			\ s:operator: s:Token(s:operator),
 			\ s:let: s:Token(s:let)->s:Seq(s:DeclarationLayout, s:Token(s:in), s:Lazy({-> s:Expression})),
-			\ s:if: s:Token(s:if)->s:Seq(s:Lazy({-> s:Expression}), s:Token(s:then), s:Lazy({-> s:Expression}), s:Seq(s:Token(s:else), s:Lazy({-> s:Expression}))->s:Opt()),
+			\ s:if: s:Token(s:if)->s:Seq(s:Lazy({-> s:Expression}), s:Token(s:then), s:Lazy({-> s:Expression}), s:Token(s:else), s:Lazy({-> s:Expression})),
 			\ s:do: s:Token(s:do)->s:Seq(s:ExpressionLayout),
 			\ s:case: s:Token(s:case)->s:Seq(s:Lazy({-> s:Expression}), s:Token(s:of), s:ExpressionLayout),
 			\ s:lparen: s:Seq(s:Token(s:lparen), s:Lazy({-> s:Expression})->s:Sep(s:comma), s:Token(s:rparen)),
@@ -333,7 +295,7 @@ let s:expression_list = {
 
 let s:Expression = s:AddIndent(s:FromDict(s:expression_list)->s:Many())
 
-let s:Declaration = s:Token(s:value)->s:Sep(s:comma)->s:Seq(s:Expression,
+let s:Declaration = s:AddIndent(s:Token(s:value)->s:Sep(s:comma))->s:Seq(s:Expression,
 			\ s:Opt(s:Token(s:where)->s:Seq(s:DeclarationLayout)))
 
 " Parse topdecls.
@@ -344,14 +306,14 @@ function s:BeforeNonBlank() abort
 	return col('.') <= indent(line('.')) + 1 " FIXME
 endfunction
 
+let s:indent_dir = 0
+
 " Set direction for indent cycling and return RHS for indenting.
 " Note: Leaving Insert mode with blank line would reset indent.
 function s:CycleIndentExpr(dir) abort
 	let s:indent_dir = a:dir
-	return "\<C-F>"
+	return mode() ==# 'i' ? "\<C-F>" : '=='
 endfunction
-
-let s:indent_dir = 0
 
 function GetHaskellIndent() abort
 	let prevIndent = indent(s:indent_dir ? v:lnum : prevnonblank(v:lnum))

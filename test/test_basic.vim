@@ -69,3 +69,22 @@ function Test_String() abort
 	END
 	call s:Test(text, [#{lnum: 3, points: [0, 2, 4]}])
 endfunction
+
+function Test_LocalDeclaration() abort
+	let text =<< trim END
+	foo = [x | let a, b :: Int; a = 1; b = 2
+
+	  , x <- [a..b]]
+	END
+	call s:Test(text, [#{lnum: 2, points: [0, 2, 15, 17]},
+				\ #{lnum: 3, points: [0, 2]},
+				\ #{lnum: 4, points: [0, 2]}])
+endfunction
+
+function Test_PatternMatch() abort
+	let text =<< trim END
+	foo = let
+	  (x, y) =
+	END
+	call s:Test(text, [#{lnum: 3, points: [0, 2, 4]}])
+endfunction
