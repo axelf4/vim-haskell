@@ -212,27 +212,24 @@ endfunction
 
 function s:Layout(Item) abort
 	function! s:LayoutRet(p) abort closure
-		let token = a:p.token
-		if token is s:lbrace
-			throw 'Not yet implemented'
-		elseif token == s:endtoken
+		let prevLayoutCtx = a:p.layoutCtx
+
+		if a:p.token == s:endtoken
 			eval a:p.indentations->add(indent(a:p.currentLine) + shiftwidth())
 			return s:retOk
+		elseif a:p.token is s:lbrace
+			throw 'Not yet implemented'
 		else
-			let prevLayoutCtx = a:p.layoutCtx
+			let layoutCtx = a:p.currentCol " FIXME: Handle tabs
 			" Store indentation column of the enclosing layout context
-			let a:p.layoutCtx = a:p.currentCol " FIXME: Handle tabs
+			let a:p.layoutCtx = layoutCtx
 
-			while 1
-				let result = a:Item(a:p)
-				if result == s:retNone | break | endif " parse-error clause
-
+			while a:Item(a:p) == s:retOk
 				let current = a:p.token
 				if current == s:endtoken
-					eval a:p.indentations->add(a:p.layoutCtx - 1)
+					eval a:p.indentations->add(layoutCtx - 1)
 					return s:retOk
 				endif
-
 				if current == s:layoutEnd || current == s:layoutItem || current == s:semicolon
 					call a:p.next()
 				endif
@@ -240,10 +237,9 @@ function s:Layout(Item) abort
 					break
 				endif
 			endwhile
-
-			let a:p.layoutCtx = prevLayoutCtx
 		endif
 
+		let a:p.layoutCtx = prevLayoutCtx
 		return s:retOk
 	endfunction
 	return funcref('s:LayoutRet')
@@ -278,10 +274,10 @@ function s:AddIndent(Parser) abort
 	return funcref('s:AddIndentRet')
 endfunction
 
-let s:ExpressionLayout = s:Layout(s:Lazy({-> s:Expression}))
-let s:DeclarationLayout = s:Layout(s:Lazy({-> s:Declaration}))
+const s:ExpressionLayout = s:Layout(s:Lazy({-> s:Expression}))
+const s:DeclarationLayout = s:Layout(s:Lazy({-> s:Declaration}))
 
-let s:expression_list = {
+const s:expression_list = {
 			\ s:value: s:Token(s:value),
 			\ s:operator: s:Token(s:operator),
 			\ s:let: s:Token(s:let)->s:Seq(s:DeclarationLayout, s:Token(s:in), s:Lazy({-> s:Expression})),
@@ -293,13 +289,13 @@ let s:expression_list = {
 			\ s:lbrace: s:Seq(s:Token(s:lbrace), s:Lazy({-> s:Expression})->s:Sep(s:comma), s:Token(s:rbrace)),
 			\ }
 
-let s:Expression = s:AddIndent(s:FromDict(s:expression_list)->s:Many())
+const s:Expression = s:AddIndent(s:FromDict(s:expression_list)->s:Many())
 
-let s:Declaration = s:AddIndent(s:Token(s:value)->s:Sep(s:comma))->s:Seq(s:Expression,
+const s:Declaration = s:AddIndent(s:Token(s:value)->s:Sep(s:comma))->s:Seq(s:Expression,
 			\ s:Opt(s:Token(s:where)->s:Seq(s:DeclarationLayout)))
 
 " Parse topdecls.
-let s:TopLevel = s:Declaration
+const s:TopLevel = s:Declaration
 
 " Return whether all characters to the left of the cursor are blank.
 function s:BeforeNonBlank() abort

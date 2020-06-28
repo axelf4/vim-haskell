@@ -88,3 +88,12 @@ function Test_PatternMatch() abort
 	END
 	call s:Test(text, [#{lnum: 3, points: [0, 2, 4]}])
 endfunction
+
+function Test_NestedLayoutCtxs() abort
+	let text =<< trim END
+	foo =
+	  case 3 of
+	    _ -> let x = 1
+	END
+	call s:Test(text, [#{lnum: 4, points: [0, 2, 4, 6, 13, 15]}])
+endfunction
