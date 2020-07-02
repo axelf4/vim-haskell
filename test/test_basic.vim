@@ -97,3 +97,10 @@ function Test_NestedLayoutCtxs() abort
 	END
 	call s:Test(text, [#{lnum: 4, points: [0, 2, 4, 6, 13, 15]}])
 endfunction
+
+function Test_CharLiteral() abort
+	let text =<< trim END
+	foo = ','
+	END
+	call s:Test(text, [#{lnum: 2, points: [0, 2]}])
+endfunction
