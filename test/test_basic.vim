@@ -33,8 +33,8 @@ function Test_BasicWhere() abort
 	       y = 4
 	       z foo
 	END
-	call s:Test(text,
-				\ [#{lnum: 6, points: [0, 7, 9]}])
+	call s:Test(text, [#{lnum: 3, points: [0, 4]},
+				\ #{lnum: 6, points: [0, 7, 9]}])
 endfunction
 
 function Test_MultipleDefs() abort

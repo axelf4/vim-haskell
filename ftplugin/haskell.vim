@@ -214,7 +214,7 @@ function s:Layout(Item) abort
 	function! s:LayoutRet(p) abort closure
 		let prevLayoutCtx = a:p.layoutCtx
 
-		if a:p.token == s:endtoken
+		if a:p.token == s:endtoken || a:p.initial_line == line('.')
 			eval a:p.indentations->add(indent(a:p.currentLine) + shiftwidth())
 			return s:retOk
 		elseif a:p.token is s:lbrace
