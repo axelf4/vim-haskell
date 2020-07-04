@@ -16,22 +16,14 @@ endif
 if !hasmapto('<Plug>HaskellIndentP', 'i')
 	imap <buffer> <C-D> <Plug>HaskellIndentP
 endif
-imap <buffer> <expr> <Tab> <SID>BeforeNonBlank() ? "\<Plug>HaskellIndentN" : "\<Tab>"
-imap <buffer> <expr> <BS> <SID>BeforeNonBlank() && col('.') > 1 ? "\<Plug>HaskellIndentP" : "\<BS>"
 inoremap <buffer> <unique> <expr> <Plug>HaskellIndentN <SID>CycleIndentExpr(1)
 inoremap <buffer> <unique> <expr> <Plug>HaskellIndentP <SID>CycleIndentExpr(-1)
-
-" Haskell indenting is ambiguous
-noremap <buffer> = <Nop>
-inoremap <buffer> <C-F> <Nop>
 
 let b:undo_ftplugin = 'setlocal tabstop< shiftwidth< expandtab<
 			\ indentexpr< indentkeys<
 			\ comments< commentstring<
 			\| iunmap <buffer> <Plug>HaskellIndentN| iunmap <buffer> <Plug>HaskellIndentP
-			\| iunmap <buffer> <C-T>| iunmap <buffer> <C-D>
-			\| iunmap <buffer> <Tab>| iunmap <buffer> <BS>
-			\| unmap <buffer> =| iunmap <buffer> <C-F>'
+			\| iunmap <buffer> <C-T>| iunmap <buffer> <C-D>'
 
 if exists("*GetHaskellIndent") | finish | endif
 const s:keepcpo = &cpo | set cpo&vim
@@ -296,11 +288,6 @@ const s:Declaration = s:AddIndent(s:Token(s:value)->s:Sep(s:comma))->s:Seq(s:Exp
 
 " Parse topdecls.
 const s:TopLevel = s:Declaration
-
-" Return whether all characters to the left of the cursor are blank.
-function s:BeforeNonBlank() abort
-	return col('.') <= indent(line('.')) + 1 " FIXME
-endfunction
 
 let s:indent_dir = 0
 
