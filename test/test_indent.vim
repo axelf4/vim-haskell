@@ -9,23 +9,21 @@ function s:Test(text, lines) abort
 	endfor
 endfunction
 
-function Test_Basic() abort
+function Test_BasicExpr() abort
 	let text =<< trim END
 	foo =
 	END
 	call s:Test(text, [#{lnum: 2, points: [0, 2]}])
 endfunction
 
-function Test_BasicWhere2() abort
+function Test_Where() abort
 	let text =<< trim END
 	foo = bar
 	  where bar = 4
 	END
-	call s:Test(text,
-				\ [#{lnum: 3, points: [0, 8, 10]}])
-endfunction
+	call s:Test(text, [#{lnum: 2, points: [0, 2]},
+				\ #{lnum: 3, points: [0, 8, 10]}])
 
-function Test_BasicWhere() abort
 	let text =<< trim END
 	foo = 1
 	  where
@@ -37,7 +35,7 @@ function Test_BasicWhere() abort
 				\ #{lnum: 6, points: [0, 7, 9]}])
 endfunction
 
-function Test_MultipleDefs() abort
+function Test_MultipleDecls() abort
 	let text =<< trim END
 	foo = 4
 
@@ -49,7 +47,7 @@ function Test_MultipleDefs() abort
 				\ #{lnum: 4, points: [0, 2]}])
 endfunction
 
-function Test_AWhereAndLet() abort
+function Test_WhereAndLet() abort
 	let text =<< trim END
 	foo = 1
 	  where
@@ -65,7 +63,7 @@ endfunction
 function Test_String() abort
 	let text =<< trim END
 	foo = let
-	  "bar
+	  "bar \
 	END
 	call s:Test(text, [#{lnum: 3, points: [0, 2, 4]}])
 endfunction
@@ -101,6 +99,13 @@ endfunction
 function Test_CharLiteral() abort
 	let text =<< trim END
 	foo = ','
+	END
+	call s:Test(text, [#{lnum: 2, points: [0, 2]}])
+endfunction
+
+function Test_Comment() abort
+	let text =<< trim END
+	foo = -- let x = 42
 	END
 	call s:Test(text, [#{lnum: 2, points: [0, 2]}])
 endfunction

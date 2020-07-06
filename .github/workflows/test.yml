@@ -1,0 +1,15 @@
+name: test
+
+on: [push, pull_request]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
+    - name: Install Vim
+      run: |
+        curl -L --output vim https://github.com/vim/vim-appimage/releases/download/v8.2.1145/GVim-v8.2.1145.glibc2.15-x86_64.AppImage \
+          && chmod +x vim
+    - name: Run tests
+      run: make test VIM=./vim

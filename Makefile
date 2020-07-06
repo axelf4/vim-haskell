@@ -1,12 +1,13 @@
-all: check
+VIM = vim
+REDIR_TEST_TO_NULL = > /dev/null 2>&1
 
-REDIR_TEST_TO_NULL = >/dev/null 2>&1
+all: test
 
 TESTS = $(wildcard test/test_*.vim)
 
 $(TESTS):
-		vim --clean --not-a-term -u runtest.vim "$@" $(REDIR_TEST_TO_NULL) || { cat testlog; false; }
+	$(VIM) --clean --not-a-term -u runtest.vim "$@" $(REDIR_TEST_TO_NULL) || { cat testlog; false; }
 
-check: $(TESTS)
+test: $(TESTS)
 
-.PHONY: all check $(TESTS)
+.PHONY: all test $(TESTS)
