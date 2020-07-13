@@ -109,3 +109,23 @@ function Test_Comment() abort
 	END
 	call s:Test(text, [#{lnum: 2, points: [0, 2]}])
 endfunction
+
+function Test_ExplicitLayoutCtx() abort
+	let text =<< trim END
+	foo = x where {
+	  x = y
+	  ; y = z }
+	END
+	call s:Test(text, [#{lnum: 2, points: [0, 2]},
+				\ #{lnum: 3, points: [0, 2]},
+				\ #{lnum: 4, points: [0]}])
+
+	let text =<< trim END
+	foo = x where
+	  {
+	  }
+	END
+	call s:Test(text, [#{lnum: 2, points: [0, 2]},
+				\ #{lnum: 3, points: [0, 2]},
+				\ #{lnum: 4, points: [0]}])
+endfunction

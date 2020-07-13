@@ -92,6 +92,7 @@ function HaskellParse() abort
 				\ }
 
 	function parser.next() abort
+		if line('.') >= self.initial_line | let self.token = s:endtoken | endif
 		if self.token is s:endtoken | return s:endtoken | endif
 
 		" If has pending token: Return it
@@ -101,7 +102,7 @@ function HaskellParse() abort
 			return self.token
 		endif
 
-		let [prevLine, prevCol] = [self.currentLine, self.currentCol]
+		let prevLine = self.currentLine
 		" Lex the next token and jump to its start
 		let self.token = s:LexToken(self.initial_line, self.token is v:null)
 
@@ -121,8 +122,6 @@ function HaskellParse() abort
 					let self.nextToken = v:null
 				endif
 			endif
-		elseif line('.') > self.initial_line
-			self.token = s:endtoken
 		endif
 
 		return self.token
@@ -217,10 +216,14 @@ function s:Layout(Item) abort
 			eval a:p.indentations->add(indent(a:p.currentLine) + shiftwidth())
 			return s:retOk
 		elseif a:p.token is s:lbrace
-			throw 'Not yet implemented'
+			let [a:p.layoutCtx, startIndent] = [0, col('.') - 1]
+			let res = s:Token(s:lbrace)->s:Seq(a:Item->s:Sep(s:semicolon))->s:AddIndent()(a:p)
+			if res == s:retOk && a:p.token == s:rbrace && line('.') == a:p.initial_line
+				eval a:p.indentations->add(startIndent)
+			endif
 		else
-			let layoutCtx = a:p.currentCol " FIXME: Handle tabs
 			" Store indentation column of the enclosing layout context
+			let layoutCtx = a:p.currentCol " FIXME: Handle tabs
 			let a:p.layoutCtx = layoutCtx
 
 			while a:Item(a:p) == s:retOk
@@ -248,7 +251,7 @@ function s:Sep(Parser, sep) abort
 	let dict = {}
 	function dict.fn(p) abort closure
 		let result = a:Parser(a:p)
-		if result == s:retNone | return s:retOk | endif
+		if result == s:retNone | return s:retNone | endif
 
 		while a:p.token == a:sep
 			call a:p.next()
@@ -275,25 +278,23 @@ function s:AddIndent(Parser) abort
 	return dict.fn
 endfunction
 
-const s:ExpressionLayout = s:Layout(s:Lazy({-> s:Expression}))
-const s:DeclarationLayout = s:Layout(s:Lazy({-> s:Declaration}))
+const [s:Expr, s:Decl] = [s:Lazy({-> s:Expression}), s:Lazy({-> s:Declaration})]
 
 const s:expression_list = {
 			\ s:value: s:Token(s:value),
 			\ s:operator: s:Token(s:operator),
-			\ s:let: s:Token(s:let)->s:Seq(s:DeclarationLayout, s:Token(s:in), s:Lazy({-> s:Expression})),
-			\ s:if: s:Token(s:if)->s:Seq(s:Lazy({-> s:Expression}), s:Token(s:then), s:Lazy({-> s:Expression}), s:Token(s:else), s:Lazy({-> s:Expression})),
-			\ s:do: s:Token(s:do)->s:Seq(s:ExpressionLayout),
-			\ s:case: s:Token(s:case)->s:Seq(s:Lazy({-> s:Expression}), s:Token(s:of), s:ExpressionLayout),
-			\ s:lparen: s:Seq(s:Token(s:lparen), s:Lazy({-> s:Expression})->s:Sep(s:comma), s:Token(s:rparen)),
-			\ s:lbracket: s:Seq(s:Token(s:lbracket), s:Lazy({-> s:Expression})->s:Sep(s:comma), s:Token(s:rbracket)),
-			\ s:lbrace: s:Seq(s:Token(s:lbrace), s:Lazy({-> s:Expression})->s:Sep(s:comma), s:Token(s:rbrace)),
+			\ s:let: s:Token(s:let)->s:Seq(s:Layout(s:Decl), s:Token(s:in), s:Expr),
+			\ s:if: s:Token(s:if)->s:Seq(s:Expr, s:Token(s:then), s:Expr, s:Token(s:else), s:Expr),
+			\ s:do: s:Token(s:do)->s:Seq(s:Layout(s:Expr)),
+			\ s:case: s:Token(s:case)->s:Seq(s:Expr, s:Token(s:of), s:Layout(s:Expr)),
+			\ s:lparen: s:Seq(s:Token(s:lparen), s:Expr->s:Sep(s:comma), s:Token(s:rparen)),
+			\ s:lbracket: s:Seq(s:Token(s:lbracket), s:Expr->s:Sep(s:comma), s:Token(s:rbracket)),
+			\ s:lbrace: s:Seq(s:Token(s:lbrace), s:Expr->s:Sep(s:comma), s:Token(s:rbrace)),
 			\ }
 
 const s:Expression = s:AddIndent(s:FromDict(s:expression_list)->s:Many())
-
-const s:Declaration = s:AddIndent(s:Token(s:value)->s:Sep(s:comma))->s:Seq(s:Expression,
-			\ s:Opt(s:Token(s:where)->s:Seq(s:DeclarationLayout)))
+const s:Declaration = s:AddIndent(s:Token(s:value)->s:Sep(s:comma))->s:Opt()
+			\ ->s:Seq(s:Expression, s:Opt(s:Token(s:where)->s:Seq(s:Layout(s:Decl))))
 
 " Parse topdecls.
 const s:TopLevel = s:Declaration
