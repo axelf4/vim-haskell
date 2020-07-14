@@ -141,27 +141,30 @@ endfunction
 const [s:retNone, s:retOk, s:retFinished] = range(3)
 
 function s:Token(token) abort
-	function! s:TokenRet(p) abort closure
+	let dict = {}
+	function dict.fn(p) abort closure
 		if a:p.token is a:token
 			call a:p.next()
 			return s:retOk
 		endif
 		return s:retNone
 	endfunction
-	return funcref('s:TokenRet')
+	return dict.fn
 endfunction
 
 function s:FromDict(dict) abort
-	function! s:FromDictRet(p) abort closure
+	let dict = {}
+	function dict.fn(p) abort closure
 		let Parser = a:dict->get(a:p.token, v:null)
 		return Parser is v:null ? s:retNone : Parser(a:p)
 	endfunction
-	return funcref('s:FromDictRet')
+	return dict.fn
 endfunction
 
 function s:Seq(...) abort
 	let alts = a:000
-	function! s:SeqRet(p) abort closure
+	let dict = {}
+	function dict.fn(p) abort closure
 		let first = 1
 		for Alt in alts
 			let result = Alt(a:p)
@@ -170,11 +173,12 @@ function s:Seq(...) abort
 		endfor
 		return s:retOk
 	endfunction
-	return funcref('s:SeqRet')
+	return dict.fn
 endfunction
 
 function s:Many(Parser) abort
-	function! s:ManyRet(p) closure
+	let dict = {}
+	function dict.fn(p) closure
 		let first = 1
 		while 1
 			let result = a:Parser(a:p)
@@ -182,28 +186,31 @@ function s:Many(Parser) abort
 			let first = 0
 		endwhile
 	endfunction
-	return funcref('s:ManyRet')
+	return dict.fn
 endfunction
 
 function s:Lazy(Cb) abort
 	let Parser = v:null
-	function! s:LazyRet(p) abort closure
+	let dict = {}
+	function dict.fn(p) abort closure
 		if Parser is v:null | let Parser = a:Cb() | endif
 		return Parser(a:p)
 	endfunction
-	return funcref('s:LazyRet')
+	return dict.fn
 endfunction
 
 function s:Opt(Parser) abort
-	function! s:OptRet(p) abort closure
+	let dict = {}
+	function dict.fn(p) abort closure
 		call a:Parser(a:p)
 		return s:retOk
 	endfunction
-	return funcref('s:OptRet')
+	return dict.fn
 endfunction
 
 function s:Layout(Item) abort
-	function! s:LayoutRet(p) abort closure
+	let dict = {}
+	function dict.fn(p) abort closure
 		let prevLayoutCtx = a:p.layoutCtx
 
 		if a:p.token == s:endtoken || a:p.initial_line == line('.')
@@ -234,11 +241,12 @@ function s:Layout(Item) abort
 		let a:p.layoutCtx = prevLayoutCtx
 		return s:retOk
 	endfunction
-	return funcref('s:LayoutRet')
+	return dict.fn
 endfunction
 
 function s:Sep(Parser, sep) abort
-	function! s:SepRet(p) abort closure
+	let dict = {}
+	function dict.fn(p) abort closure
 		let result = a:Parser(a:p)
 		if result == s:retNone | return s:retOk | endif
 
@@ -251,11 +259,12 @@ function s:Sep(Parser, sep) abort
 
 		return s:retOk
 	endfunction
-	return funcref('s:SepRet')
+	return dict.fn
 endfunction
 
 function s:AddIndent(Parser) abort
-	function! s:AddIndentRet(p) abort closure
+	let dict = {}
+	function dict.fn(p) abort closure
 		let startIndent = max([indent(a:p.currentLine), a:p.layoutCtx - 1])
 		let result = a:Parser(a:p)
 		if result == s:retOk && a:p.token == s:endtoken
@@ -263,7 +272,7 @@ function s:AddIndent(Parser) abort
 		endif
 		return result
 	endfunction
-	return funcref('s:AddIndentRet')
+	return dict.fn
 endfunction
 
 const s:ExpressionLayout = s:Layout(s:Lazy({-> s:Expression}))
