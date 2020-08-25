@@ -5,7 +5,7 @@ function s:Test(text, lines) abort
 
 	for assertion in a:lines
 		call cursor(assertion.lnum, 1)
-		call assert_equal(assertion.points, HaskellParse()->uniq())
+		call assert_equal(assertion.points, haskell#Parse()->uniq())
 	endfor
 endfunction
 
