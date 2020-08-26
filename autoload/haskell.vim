@@ -33,7 +33,7 @@ const s:str2Tok = {
 " Returns "s:endtoken" if no token was found.
 function s:LexToken(stopline, at_cursor) abort
 	let match = search(s:search_pat, (a:at_cursor ? 'c' : '') .. 'pWz', a:stopline, 0,
-				\ {-> synID(line('.'), col('.'), 1)->synIDattr('name') =~# '^hs\%(Line\|Block\)Comment$'})
+				\ {-> synID(line('.'), col('.'), 1)->synIDattr('name') =~# 'Comment$'})
 	return match == 2 ? s:str2Tok[expand('<cword>')]
 				\ : match == 3 ? s:value
 				\ : match == 4 ? s:str2Tok[getline('.')[col('.') - 1]]
@@ -48,9 +48,9 @@ function haskell#Parse() abort
 	let initial_line = line('.')
 
 	" Move to first line with zero indentation
-	normal! -
-	if !search('^\S\|\%^', 'bcW', 0, 0, {-> synID(line('.'), col('.'), 1)->synIDattr('name')
-				\ =~# 'hs\%(Line\|Block\)Comment\|hsString'})
+	normal! 0
+	if !search('^\S', 'bW', 0, 0, {-> synID(line('.'), 1, 1)->synIDattr('name')
+				\ =~# 'Comment$\|String$'})
 		call cursor(1, 1)
 	endif
 
