@@ -129,3 +129,10 @@ function Test_ExplicitLayoutCtx() abort
 				\ #{lnum: 3, points: [0, 2]},
 				\ #{lnum: 4, points: [0]}])
 endfunction
+
+function Test_EmptyPair() abort
+	let text =<< trim END
+	foo = () + [] + True {}
+	END
+	call s:Test(text, [#{lnum: 2, points: [0, 2]}])
+endfunction

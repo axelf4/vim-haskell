@@ -259,9 +259,9 @@ const s:expression_list = {
 			\ s:if: s:Token(s:if)->s:Seq(s:Expr, s:Token(s:then), s:Expr, s:Token(s:else), s:Expr),
 			\ s:do: s:Token(s:do)->s:Seq(s:Layout(s:Expr)),
 			\ s:case: s:Token(s:case)->s:Seq(s:Expr, s:Token(s:of), s:Layout(s:Expr)),
-			\ s:lparen: s:Seq(s:Token(s:lparen), s:Expr->s:Sep(s:comma), s:Token(s:rparen)),
-			\ s:lbracket: s:Seq(s:Token(s:lbracket), s:Expr->s:Sep(s:comma), s:Token(s:rbracket)),
-			\ s:lbrace: s:Seq(s:Token(s:lbrace), s:Expr->s:Sep(s:comma), s:Token(s:rbrace)),
+			\ s:lparen: s:Seq(s:Token(s:lparen), s:Expr->s:Sep(s:comma)->s:Opt(), s:Token(s:rparen)),
+			\ s:lbracket: s:Seq(s:Token(s:lbracket), s:Expr->s:Sep(s:comma)->s:Opt(), s:Token(s:rbracket)),
+			\ s:lbrace: s:Seq(s:Token(s:lbrace), s:Expr->s:Sep(s:comma)->s:Opt(), s:Token(s:rbrace)),
 			\ }
 
 const s:Expression = s:AddIndent(s:FromDict(s:expression_list)->s:Many())
