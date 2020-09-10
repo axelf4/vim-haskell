@@ -42,7 +42,7 @@ function GetHaskellIndent() abort
 		endfor
 		return indentations[-1]
 	else
-		for indent in indentations->reverse()
+		for indent in reverse(indentations)
 			if indent < prevIndent | return indent | endif
 		endfor
 		return indentations[-1] " List was reversed in-place

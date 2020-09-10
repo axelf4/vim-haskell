@@ -5,7 +5,7 @@ function s:Test(text, lines) abort
 
 	for assertion in a:lines
 		call cursor(assertion.lnum, 1)
-		call assert_equal(assertion.points, haskell#Parse()->uniq())
+		call assert_equal(assertion.points, uniq(haskell#Parse()))
 	endfor
 endfunction
 
@@ -13,7 +13,7 @@ function Test_BasicExpr() abort
 	let text =<< trim END
 	foo =
 	END
-	call s:Test(text, [#{lnum: 2, points: [0, 2]}])
+	call s:Test(text, [{'lnum': 2, 'points': [0, 2]}])
 endfunction
 
 function Test_Where() abort
@@ -21,8 +21,8 @@ function Test_Where() abort
 	foo = bar
 	  where bar = 4
 	END
-	call s:Test(text, [#{lnum: 2, points: [0, 2]},
-				\ #{lnum: 3, points: [0, 8, 10]}])
+	call s:Test(text, [{'lnum': 2, 'points': [0, 2]},
+				\ {'lnum': 3, 'points': [0, 8, 10]}])
 
 	let text =<< trim END
 	foo = 1
@@ -31,8 +31,8 @@ function Test_Where() abort
 	       y = 4
 	       z foo
 	END
-	call s:Test(text, [#{lnum: 3, points: [0, 4]},
-				\ #{lnum: 6, points: [0, 7, 9]}])
+	call s:Test(text, [{'lnum': 3, 'points': [0, 4]},
+				\ {'lnum': 6, 'points': [0, 7, 9]}])
 endfunction
 
 function Test_MultipleDecls() abort
@@ -42,9 +42,9 @@ function Test_MultipleDecls() abort
 	bar = 4
 	test
 	END
-	call s:Test(text, [#{lnum: 1, points: [0]},
-				\ #{lnum: 2, points: [0, 2]},
-				\ #{lnum: 4, points: [0, 2]}])
+	call s:Test(text, [{'lnum': 1, 'points': [0]},
+				\ {'lnum': 2, 'points': [0, 2]},
+				\ {'lnum': 4, 'points': [0, 2]}])
 endfunction
 
 function Test_WhereAndLet() abort
@@ -57,7 +57,7 @@ function Test_WhereAndLet() abort
 	       z foo
 	END
 	call s:Test(text,
-				\ [#{lnum: 7, points: [0, 7, 9]}])
+				\ [{'lnum': 7, 'points': [0, 7, 9]}])
 endfunction
 
 function Test_String() abort
@@ -65,7 +65,7 @@ function Test_String() abort
 	foo = let
 	  "bar \
 	END
-	call s:Test(text, [#{lnum: 3, points: [0, 2, 4]}])
+	call s:Test(text, [{'lnum': 3, 'points': [0, 2, 4]}])
 endfunction
 
 function Test_LocalDeclaration() abort
@@ -74,9 +74,9 @@ function Test_LocalDeclaration() abort
 
 	  , x <- [a..b]]
 	END
-	call s:Test(text, [#{lnum: 2, points: [0, 2, 15, 17]},
-				\ #{lnum: 3, points: [0, 2]},
-				\ #{lnum: 4, points: [0, 2]}])
+	call s:Test(text, [{'lnum': 2, 'points': [0, 2, 15, 17]},
+				\ {'lnum': 3, 'points': [0, 2]},
+				\ {'lnum': 4, 'points': [0, 2]}])
 endfunction
 
 function Test_PatternMatch() abort
@@ -84,7 +84,7 @@ function Test_PatternMatch() abort
 	foo = let
 	  (x, y) =
 	END
-	call s:Test(text, [#{lnum: 3, points: [0, 2, 4]}])
+	call s:Test(text, [{'lnum': 3, 'points': [0, 2, 4]}])
 endfunction
 
 function Test_NestedLayoutCtxs() abort
@@ -93,21 +93,28 @@ function Test_NestedLayoutCtxs() abort
 	  case 3 of
 	    _ -> let x = 1
 	END
-	call s:Test(text, [#{lnum: 4, points: [0, 2, 4, 6, 13, 15]}])
+	call s:Test(text, [{'lnum': 4, 'points': [0, 2, 4, 6, 13, 15]}])
 endfunction
 
 function Test_CharLiteral() abort
 	let text =<< trim END
 	foo = ','
 	END
-	call s:Test(text, [#{lnum: 2, points: [0, 2]}])
+	call s:Test(text, [{'lnum': 2, 'points': [0, 2]}])
 endfunction
 
 function Test_Comment() abort
 	let text =<< trim END
 	foo = -- let x = 42
 	END
-	call s:Test(text, [#{lnum: 2, points: [0, 2]}])
+	call s:Test(text, [{'lnum': 2, 'points': [0, 2]}])
+endfunction
+
+function Test_OnlyComment() abort
+	let text =<< trim END
+	-- x
+	END
+	call s:Test(text, [{'lnum': 2, 'points': [0]}])
 endfunction
 
 function Test_ExplicitLayoutCtx() abort
@@ -116,23 +123,23 @@ function Test_ExplicitLayoutCtx() abort
 	  x = y
 	  ; y = z }
 	END
-	call s:Test(text, [#{lnum: 2, points: [0, 2]},
-				\ #{lnum: 3, points: [0, 2]},
-				\ #{lnum: 4, points: [0]}])
+	call s:Test(text, [{'lnum': 2, 'points': [0, 2]},
+				\ {'lnum': 3, 'points': [0, 2]},
+				\ {'lnum': 4, 'points': [0]}])
 
 	let text =<< trim END
 	foo = x where
 	  {
 	  }
 	END
-	call s:Test(text, [#{lnum: 2, points: [0, 2]},
-				\ #{lnum: 3, points: [0, 2]},
-				\ #{lnum: 4, points: [0]}])
+	call s:Test(text, [{'lnum': 2, 'points': [0, 2]},
+				\ {'lnum': 3, 'points': [0, 2]},
+				\ {'lnum': 4, 'points': [0]}])
 endfunction
 
 function Test_EmptyPair() abort
 	let text =<< trim END
 	foo = () + [] + True {}
 	END
-	call s:Test(text, [#{lnum: 2, points: [0, 2]}])
+	call s:Test(text, [{'lnum': 2, 'points': [0, 2]}])
 endfunction

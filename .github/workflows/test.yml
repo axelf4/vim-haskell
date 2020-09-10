@@ -5,11 +5,21 @@ on: [push, pull_request]
 jobs:
   test:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        vim: [vim, nvim]
     steps:
     - uses: actions/checkout@v2
     - name: Install Vim
       run: |
-        curl -L --output vim https://github.com/vim/vim-appimage/releases/download/v8.2.1145/GVim-v8.2.1145.glibc2.15-x86_64.AppImage \
-          && chmod +x vim
+        case ${{ matrix.vim }} in
+          vim)
+            curl -L --output vim https://github.com/vim/vim-appimage/releases/download/v8.2.1145/GVim-v8.2.1145.glibc2.15-x86_64.AppImage \
+              && chmod +x vim && echo "::add-path::$PWD"
+            ;;
+          nvim)
+            curl -L https://github.com/neovim/neovim/releases/latest/download/nvim-linux64.tar.gz | tar xz && echo "::add-path::$PWD/nvim-linux64/bin"
+            ;;
+        esac
     - name: Run tests
-      run: make test VIM=./vim
+      run: make test VIM=${{ matrix.vim }}

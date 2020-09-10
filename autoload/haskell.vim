@@ -32,36 +32,37 @@ const s:str2Tok = {
 " Lex the next token and move the cursor to its start.
 " Returns "s:endtoken" if no token was found.
 function s:LexToken(stopline, at_cursor) abort
-	let match = search(s:search_pat, (a:at_cursor ? 'c' : '') .. 'pWz', a:stopline, 0,
-				\ {-> synID(line('.'), col('.'), 1)->synIDattr('name') =~# 'Comment$'})
-	return match == 2 ? s:str2Tok[expand('<cword>')]
-				\ : match == 3 ? s:value
-				\ : match == 4 ? s:str2Tok[getline('.')[col('.') - 1]]
-				\ : match == 5 ? s:operator
-				\ : s:endtoken
+	let at_cursor = a:at_cursor
+	while 1
+		let match = search(s:search_pat, (at_cursor ? 'c' : '') .. 'pWz', a:stopline, 0)
+		if match && synIDattr(synID(line('.'), col('.'), 1), 'name') =~# 'Comment$'
+			let at_cursor = 0
+			continue
+		endif
+		return match == 2 ? s:str2Tok[expand('<cword>')]
+					\ : match == 3 ? s:value
+					\ : match == 4 ? s:str2Tok[getline('.')[col('.') - 1]]
+					\ : match == 5 ? s:operator
+					\ : s:endtoken
+	endwhile
 endfunction
 
 " Parse around the cursor and return possible indentation points.
 "
 " May move the cursor.
 function haskell#Parse() abort
-	let initial_line = line('.')
+	let parser = {'token': v:null, 'nextToken': v:null,
+				\ 'currentLine': 1, 'currentCol': 1,
+				\ 'initial_line': line('.'),
+				\ 'layoutCtx': 0,
+				\ 'indentations': [0],
+				\ }
 
 	" Move to first line with zero indentation
 	normal! 0
-	if !search('^\S', 'bW', 0, 0, {-> synID(line('.'), 1, 1)->synIDattr('name')
-				\ =~# 'Comment$\|String$'})
-		call cursor(1, 1)
-	endif
-
-	if line('.') == initial_line | return [0] | endif " At beginning of file
-
-	let parser = #{token: v:null, nextToken: v:null,
-				\ currentLine: 1, currentCol: 1,
-				\ initial_line: initial_line,
-				\ layoutCtx: 0,
-				\ indentations: [0],
-				\ }
+	while search('^\S\|\%^', 'bW', 0, 0)
+				\ && synIDattr(synID(line('.'), 1, 1), 'name') =~# 'Comment$\|String$'
+	endwhile
 
 	function parser.next() abort
 		if line('.') >= self.initial_line | let self.token = s:endtoken | endif
@@ -102,7 +103,7 @@ function haskell#Parse() abort
 	let parser.token = parser.next()
 
 	let result = s:TopLevel(parser)
-	return parser.indentations->sort('n')
+	return sort(parser.indentations, 'n')
 endfunction
 
 " Parser return statuses.
@@ -126,7 +127,7 @@ endfunction
 function s:FromDict(dict) abort
 	let dict = {}
 	function dict.fn(p) abort closure
-		let Parser = a:dict->get(a:p.token, v:null)
+		let Parser = get(a:dict, a:p.token, v:null)
 		return Parser is v:null ? s:retNone : Parser(a:p)
 	endfunction
 	return dict.fn
@@ -185,13 +186,13 @@ function s:Layout(Item) abort
 		let prevLayoutCtx = a:p.layoutCtx
 
 		if a:p.token == s:endtoken || a:p.initial_line == line('.')
-			eval a:p.indentations->add(indent(a:p.currentLine) + shiftwidth())
+			call add(a:p.indentations, indent(a:p.currentLine) + shiftwidth())
 			return s:retOk
 		elseif a:p.token is s:lbrace
 			let [a:p.layoutCtx, startIndent] = [0, col('.') - 1]
-			let res = s:Token(s:lbrace)->s:Seq(a:Item->s:Sep(s:semicolon))->s:AddIndent()(a:p)
+			let res = s:AddIndent(s:Seq(s:Token(s:lbrace), s:Sep(a:Item, s:semicolon)))(a:p)
 			if res == s:retOk && a:p.token == s:rbrace && line('.') == a:p.initial_line
-				eval a:p.indentations->add(startIndent)
+				call add(a:p.indentations, startIndent)
 			endif
 		else
 			" Store indentation column of the enclosing layout context
@@ -201,7 +202,7 @@ function s:Layout(Item) abort
 			while a:Item(a:p) == s:retOk
 				let current = a:p.token
 				if current == s:endtoken
-					eval a:p.indentations->add(layoutCtx - 1)
+					call add(a:p.indentations, layoutCtx - 1)
 					return s:retOk
 				endif
 				if current == s:layoutEnd || current == s:layoutItem || current == s:semicolon
@@ -243,7 +244,7 @@ function s:AddIndent(Parser) abort
 		let startIndent = max([indent(a:p.currentLine), a:p.layoutCtx - 1])
 		let result = a:Parser(a:p)
 		if result == s:retOk && a:p.token == s:endtoken
-			eval a:p.indentations->add(startIndent + shiftwidth())
+			call add(a:p.indentations, startIndent + shiftwidth())
 		endif
 		return result
 	endfunction
@@ -255,18 +256,18 @@ const [s:Expr, s:Decl] = [s:Lazy({-> s:Expression}), s:Lazy({-> s:Declaration})]
 const s:expression_list = {
 			\ s:value: s:Token(s:value),
 			\ s:operator: s:Token(s:operator),
-			\ s:let: s:Token(s:let)->s:Seq(s:Layout(s:Decl), s:Token(s:in), s:Expr),
-			\ s:if: s:Token(s:if)->s:Seq(s:Expr, s:Token(s:then), s:Expr, s:Token(s:else), s:Expr),
-			\ s:do: s:Token(s:do)->s:Seq(s:Layout(s:Expr)),
-			\ s:case: s:Token(s:case)->s:Seq(s:Expr, s:Token(s:of), s:Layout(s:Expr)),
-			\ s:lparen: s:Seq(s:Token(s:lparen), s:Expr->s:Sep(s:comma)->s:Opt(), s:Token(s:rparen)),
-			\ s:lbracket: s:Seq(s:Token(s:lbracket), s:Expr->s:Sep(s:comma)->s:Opt(), s:Token(s:rbracket)),
-			\ s:lbrace: s:Seq(s:Token(s:lbrace), s:Expr->s:Sep(s:comma)->s:Opt(), s:Token(s:rbrace)),
+			\ s:let: s:Seq(s:Token(s:let), s:Layout(s:Decl), s:Token(s:in), s:Expr),
+			\ s:if: s:Seq(s:Token(s:if), s:Expr, s:Token(s:then), s:Expr, s:Token(s:else), s:Expr),
+			\ s:do: s:Seq(s:Token(s:do), s:Layout(s:Expr)),
+			\ s:case: s:Seq(s:Token(s:case), s:Expr, s:Token(s:of), s:Layout(s:Expr)),
+			\ s:lparen: s:Seq(s:Token(s:lparen), s:Opt(s:Sep(s:Expr, s:comma)), s:Token(s:rparen)),
+			\ s:lbracket: s:Seq(s:Token(s:lbracket), s:Opt(s:Sep(s:Expr, s:comma)), s:Token(s:rbracket)),
+			\ s:lbrace: s:Seq(s:Token(s:lbrace), s:Opt(s:Sep(s:Expr, s:comma)), s:Token(s:rbrace)),
 			\ }
 
-const s:Expression = s:AddIndent(s:FromDict(s:expression_list)->s:Many())
-const s:Declaration = s:AddIndent(s:Token(s:value)->s:Sep(s:comma))->s:Opt()
-			\ ->s:Seq(s:Expression, s:Opt(s:Token(s:where)->s:Seq(s:Layout(s:Decl))))
+const s:Expression = s:AddIndent(s:Many(s:FromDict(s:expression_list)))
+const s:Declaration = s:Seq(s:Opt(s:AddIndent(s:Sep(s:Token(s:value), s:comma))),
+			\ s:Expression, s:Opt(s:Seq(s:Token(s:where), s:Layout(s:Decl))))
 
 " Parse topdecls.
 const s:TopLevel = s:Declaration
