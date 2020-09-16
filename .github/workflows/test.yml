@@ -7,19 +7,16 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        vim: [vim, nvim]
+        include:
+          - vim-url: https://github.com/vim/vim-appimage/releases/download/v8.2.1145/GVim-v8.2.1145.glibc2.15-x86_64.AppImage
+            vim-flags: --not-a-term
+          - vim-url: https://github.com/neovim/neovim/releases/download/nightly/nvim.appimage
+            vim-flags: --headless
     steps:
     - uses: actions/checkout@v2
     - name: Install Vim
       run: |
-        case ${{ matrix.vim }} in
-          vim)
-            curl -L --output vim https://github.com/vim/vim-appimage/releases/download/v8.2.1145/GVim-v8.2.1145.glibc2.15-x86_64.AppImage \
-              && chmod +x vim && echo "::add-path::$PWD"
-            ;;
-          nvim)
-            curl -L https://github.com/neovim/neovim/releases/latest/download/nvim-linux64.tar.gz | tar xz && echo "::add-path::$PWD/nvim-linux64/bin"
-            ;;
-        esac
+        curl -L --output vim ${{ matrix.vim-url }}
+        chmod +x vim
     - name: Run tests
-      run: make test VIM=${{ matrix.vim }}
+      run: make test VIM=./vim VIMFLAGS=${{ matrix.vim-flags }}
