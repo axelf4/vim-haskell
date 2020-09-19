@@ -143,3 +143,15 @@ function Test_EmptyPair() abort
 	END
 	call s:Test(text, [{'lnum': 2, 'points': [0, 2]}])
 endfunction
+
+function Test_InsertMode() abort
+	set filetype=haskell
+	call setline(1, ['foo = let x = 0'])
+
+	execute "normal o\<C-T>y = 1"
+	call assert_equal('          y = 1', getline(2))
+
+	" Assert that indent on blank line is deleted upon leaving Insert mode
+	execute "normal S\<C-T>"
+	call assert_equal('', getline(2))
+endfunction

@@ -31,7 +31,16 @@ function s:CycleIndentExpr(dir) abort
 	return mode() ==# 'i' ? "\<C-F>" : '=='
 endfunction
 
+let s:skip_ai = 0
+
 function GetHaskellIndent() abort
+	" Neovim indents twice on ^F...
+	if s:skip_ai
+		let s:skip_ai = 0
+		return -1
+	endif
+	if s:indent_dir && has('nvim') | let s:skip_ai = 1 | endif
+
 	let prevIndent = indent(s:indent_dir ? v:lnum : prevnonblank(v:lnum))
 	let indentations = haskell#Parse()
 
